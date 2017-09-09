@@ -205,7 +205,7 @@ class Global:
         return {"game": guild.me.game, "status": guild.me.status}
 
     async def presence_manager(self):
-        while self is self.bot.get_cog("Admin"):
+        while self is self.bot.get_cog("Global"):
             try:
                 doc = await self.bot.database.get_cog_config(self)
                 if not doc:
