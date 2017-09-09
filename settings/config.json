@@ -1,0 +1,15 @@
+{
+    "TOKEN" : "",
+    "SELFBOT" : false,
+    "DATABASE" : {
+        "host": null,
+        "port": 27017,
+        "credentials" : {
+            "user" : null,
+            "pass" : null
+        }
+    },
+    "OWNER_ID" : null,
+    "DESCRIPTION" : "https://github.com/Maselkov/Toothy",
+    "PREFIXES" : [">"]
+}
