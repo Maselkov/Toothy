@@ -36,7 +36,7 @@ class BotsDiscord:
         url = "https://bots.discord.pw/api/bots/{}/stats".format(
             self.bot.user.id)
         headers = {"Authorization": token, "Content-Type": "application/json"}
-        payload = {"server_count": len(self.bot.guild)}
+        payload = {"server_count": len(self.bot.guilds)}
         async with self.session.post(
             url, data=json.dumps(payload), headers=headers) as r:
             log.info("Payload: {} Response: {}".format(payload, r.status))
