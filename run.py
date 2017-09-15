@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import os
 
 from toothy.toothy import Toothy
 
@@ -25,6 +26,8 @@ def setup_logging():
 
 
 if __name__ == '__main__':
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
     setup_logging()
     bot = Toothy()
     bot.loop.create_task(bot.database.login())
