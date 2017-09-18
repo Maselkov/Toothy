@@ -44,6 +44,9 @@ class Meta:
                        " as shown"
                        "```{}prefix```".format(prefixes, prefixes[0]))
 
+    async def on_guild_remove(self, guild):
+        await self.bot.database.set_guild(guild, {"prefixes": []})
+
 
 def setup(bot):
     bot.add_cog(Meta(bot))
