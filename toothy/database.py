@@ -20,7 +20,7 @@ class MongoController:
         return doc.get("prefixes")
 
     async def get_user(self, user, cog=None):
-        """Get user. Pass a cog instance in order to return 
+        """Get user. Pass a cog instance in order to return
            cog specific settings"""
         doc = await self.users.find_one({"_id": user.id})
         if doc and cog:
@@ -31,7 +31,7 @@ class MongoController:
         return doc
 
     async def get_guild(self, guild, cog=None):
-        """Get guild. Pass a cog instance in order to return 
+        """Get guild. Pass a cog instance in order to return
            cog specific settings"""
         doc = await self.guilds.find_one({"_id": guild.id})
         if doc and cog:
@@ -42,7 +42,7 @@ class MongoController:
         return doc
 
     async def get_channel(self, channel, cog=None):
-        """Get channel. Pass a cog instance in order to return 
+        """Get channel. Pass a cog instance in order to return
            cog specific settings"""
         doc = await self.channels.find_one({"_id": channel.id})
         if doc and cog:
@@ -56,7 +56,12 @@ class MongoController:
         name = cog.__class__.__name__
         return await self.configs.find_one({"cog_name": name})
 
-    async def set_user(self, user, settings: dict, cog=None):
+    async def set_user(self,
+                       user,
+                       settings: dict,
+                       cog=None,
+                       *,
+                       operator="$set"):
         """Use dot notation in settings. If cog is passed, the root will be the
         cog's embedded setting document"""
         if cog:
@@ -64,9 +69,14 @@ class MongoController:
         await self.users.update_one(
             {
                 "_id": user.id
-            }, {"$set": settings}, upsert=True)
+            }, {operator: settings}, upsert=True)
 
-    async def set_guild(self, guild, settings: dict, cog=None):
+    async def set_guild(self,
+                        guild,
+                        settings: dict,
+                        cog=None,
+                        *,
+                        operator="$set"):
         """Use dot notation in settings. If cog is passed, the root will be the
         cog's embedded setting document"""
         if cog:
@@ -74,9 +84,14 @@ class MongoController:
         await self.guilds.update_one(
             {
                 "_id": guild.id
-            }, {"$set": settings}, upsert=True)
+            }, {operator: settings}, upsert=True)
 
-    async def set_channel(self, channel, settings: dict, cog=None):
+    async def set_channel(self,
+                          channel,
+                          settings: dict,
+                          cog=None,
+                          *,
+                          operator="$set"):
         """Use dot notation in settings. If cog is passed, the root will be the
         cog's embedded setting document"""
         if cog:
@@ -84,12 +99,12 @@ class MongoController:
         await self.channels.update_one(
             {
                 "_id": channel.id
-            }, {"$set": settings}, upsert=True)
+            }, {operator: settings}, upsert=True)
 
-    async def set_cog_config(self, cog, settings):
+    async def set_cog_config(self, cog, settings, *, operator="$set"):
         await self.configs.update_one({
             "cog_name": cog.__class__.__name__
-        }, {"$set": settings})
+        }, {operator: settings})
 
     def get_users_cursor(self, search: dict, cog=None):
         if cog:
