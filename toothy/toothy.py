@@ -40,8 +40,10 @@ class Toothy(commands.AutoShardedBot):
         async def prefix_callable(bot, message):
             prefix = await self.database.get_prefixes(message.guild)
             if not prefix:
-                return self.global_prefixes
-            return prefix
+                prefix = self.global_prefixes
+            return prefix + [
+                "<@!{.user.id}> ".format(self), self.user.mention + " "
+            ]
 
         super().__init__(
             command_prefix=prefix_callable,
