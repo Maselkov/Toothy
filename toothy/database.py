@@ -8,7 +8,7 @@ class MongoController:
             if credentials["user"] and credentials["pass"]:
                 uri += "{}:{}@".format(credentials["user"],
                                        credentials["pass"])
-            return uri + "{}:{}".format(host, port)
+            return uri + "{}:{}/toothy".format(host, port)
 
         self.credentials = credentials
         self.client = AsyncIOMotorClient(mongo_uri())
