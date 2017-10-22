@@ -1,3 +1,5 @@
+import urllib.parse
+
 from motor.motor_asyncio import AsyncIOMotorClient
 
 
@@ -6,8 +8,9 @@ class MongoController:
         def mongo_uri():
             uri = "mongodb://"
             if credentials["user"] and credentials["pass"]:
-                uri += "{}:{}@".format(credentials["user"],
-                                       credentials["pass"])
+                uri += "{}:{}@".format(
+                    urllib.parse.quote_plus(credentials["user"]),
+                    urllib.parse.quote_plus(credentials["pass"]))
             return uri + "{}:{}/toothy".format(host, port)
 
         self.credentials = credentials

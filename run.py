@@ -30,6 +30,5 @@ if __name__ == '__main__':
         os.makedirs("logs")
     setup_logging()
     bot = Toothy()
-    bot.loop.create_task(bot.database.login())
     print("Logging in to Discord")
     bot.run()

@@ -2,7 +2,7 @@
     "TOKEN" : "",
     "SELFBOT" : false,
     "DATABASE" : {
-        "host": null,
+        "host": "localhost",
         "port": 27017,
         "credentials" : {
             "user" : null,
