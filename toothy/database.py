@@ -3,8 +3,15 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 class MongoController:
     def __init__(self, host, port, credentials):
+        def mongo_uri():
+            uri = "mongodb://"
+            if credentials["user"] and credentials["pass"]:
+                uri += "{}:{}@".format(credentials["user"],
+                                       credentials["pass"])
+            return uri + "{}:{}".format(host, port)
+
         self.credentials = credentials
-        self.client = AsyncIOMotorClient(host=host, port=port)
+        self.client = AsyncIOMotorClient(mongo_uri())
         self.db = self.client.toothy
         self.users = self.db.users
         self.guilds = self.db.guilds
@@ -148,9 +155,3 @@ class MongoController:
         for k, v in settings.items():
             d["cogs.{}.{}".format(cog.__class__.__name__, k)] = v
         return d
-
-    async def login(self):
-        user = self.credentials["user"]
-        pw = self.credentials["pass"]
-        if user and pw:
-            await self.db.authenticate(user, pw)
