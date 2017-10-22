@@ -25,7 +25,9 @@ class MongoController:
         doc = await self.users.find_one({"_id": user.id})
         if doc and cog:
             try:
-                return doc["cogs"][cog.__class__.__name__]
+                cog_doc = doc["cogs"][cog.__class__.__name__]
+                cog_doc.update(_id=doc["_id"])
+                return cog_doc
             except KeyError:
                 return None
         return doc
@@ -36,7 +38,9 @@ class MongoController:
         doc = await self.guilds.find_one({"_id": guild.id})
         if doc and cog:
             try:
-                return doc["cogs"][cog.__class__.__name__]
+                cog_doc = doc["cogs"][cog.__class__.__name__]
+                cog_doc.update(_id=doc["_id"])
+                return cog_doc
             except KeyError:
                 return None
         return doc
@@ -47,7 +51,9 @@ class MongoController:
         doc = await self.channels.find_one({"_id": channel.id})
         if doc and cog:
             try:
-                return doc["cogs"][cog.__class__.__name__]
+                cog_doc = doc["cogs"][cog.__class__.__name__]
+                cog_doc.update(_id=doc["_id"])
+                return cog_doc
             except KeyError:
                 return None
         return doc
