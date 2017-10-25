@@ -14,9 +14,7 @@ with open("settings/config.json", encoding="utf-8", mode="r") as f:
     DESCRIPTION = data["DESCRIPTION"]
     SELFBOT = data["SELFBOT"]
     OWNER_ID = data["OWNER_ID"]
-    DB_HOST = data["DATABASE"]["host"]
-    DB_PORT = data["DATABASE"]["port"]
-    DB_CREDENTIALS = data["DATABASE"]["credentials"]
+    DB_SETTINGS = data["DATABASE"]
 
 if not TOKEN:
     print("Token not set in config.json")
@@ -51,7 +49,7 @@ class Toothy(commands.AutoShardedBot):
             pm_help=None if not SELFBOT else False,
             self_bot=SELFBOT,
             owner_id=OWNER_ID)
-        self.database = MongoController(DB_HOST, DB_PORT, DB_CREDENTIALS)
+        self.database = MongoController(DB_SETTINGS)
         self.available = True
         self.global_prefixes = data["PREFIXES"]
         self.uptime = datetime.datetime.utcnow()

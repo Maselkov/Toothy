@@ -4,16 +4,27 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 class MongoController:
-    def __init__(self, host, port, credentials):
+    def __init__(self, settings):
         def mongo_uri():
+            credentials = settings["credentials"]
             uri = "mongodb://"
+            authenticated = False
             if credentials["user"] and credentials["pass"]:
+                authenticated = True
                 uri += "{}:{}@".format(
                     urllib.parse.quote_plus(credentials["user"]),
                     urllib.parse.quote_plus(credentials["pass"]))
-            return uri + "{}:{}/toothy".format(host, port)
+            uri += "{}:{}".format(settings["host"], settings["port"])
+            if authenticated:
+                auth_db = credentials["authentication_db"]
+                uri += "/admin" if not auth_db else "/" + auth_db
+            if settings["ssl_enabled"]:
+                uri += "?ssl=true"
+                for option, value in settings["ssl_params"].items():
+                    if value:
+                        uri += "&{}={}".format(option, value)
+            return uri
 
-        self.credentials = credentials
         self.client = AsyncIOMotorClient(mongo_uri())
         self.db = self.client.toothy
         self.users = self.db.users

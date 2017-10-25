@@ -1,15 +1,21 @@
 {
-    "TOKEN" : "",
-    "SELFBOT" : false,
-    "DATABASE" : {
+    "TOKEN": "",
+    "SELFBOT": false,
+    "DATABASE": {
         "host": "localhost",
         "port": 27017,
-        "credentials" : {
-            "user" : null,
-            "pass" : null
+        "credentials": {
+            "user": null,
+            "pass": null,
+            "authentication_db": "toothy"
+        },
+        "ssl_enabled": false,
+        "ssl_params": {
+            "ssl_certfile": null,
+            "ssl_ca_certs": null
         }
     },
-    "OWNER_ID" : null,
-    "DESCRIPTION" : "https://github.com/Maselkov/Toothy",
-    "PREFIXES" : [">"]
+    "OWNER_ID": null,
+    "DESCRIPTION": "https://github.com/Maselkov/Toothy",
+    "PREFIXES": [">"]
 }
