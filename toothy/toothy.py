@@ -88,6 +88,7 @@ class Toothy(commands.AutoShardedBot):
     async def on_command_error(self, ctx, exc):
         if isinstance(exc, commands.NoPrivateMessage):
             await ctx.send("This command cannot be used in DMs")
+            ctx.command.reset_cooldown(ctx)
         elif isinstance(exc, commands.CommandOnCooldown):
             await ctx.send("You cannot use this command again for the next "
                            "{:.2f} seconds"
@@ -95,6 +96,7 @@ class Toothy(commands.AutoShardedBot):
         elif isinstance(exc, (commands.MissingRequiredArgument,
                               commands.BadArgument)):
             await self.send_cmd_help(ctx)
+            ctx.command.reset_cooldown(ctx)
         elif isinstance(exc, commands.DisabledCommand):
             await ctx.send("This command is disabled")
         elif isinstance(exc, commands.CommandInvokeError):
