@@ -1,6 +1,8 @@
 import datetime
 from collections import Counter
+import collections
 
+import discord
 from discord.ext import commands
 
 
@@ -11,6 +13,112 @@ class Statistics:
         self.bot = bot
         self.counter = Counter()
         self.db = self.bot.database.db.statistics
+
+    @commands.group()
+    async def statistics(self, ctx):
+        """Statistic related commands"""
+        if ctx.invoked_subcommand is None:
+            await self.bot.send_cmd_help(ctx)
+
+    @statistics.command(name="user")
+    async def statistics_user(self, ctx):
+        """Statistics of the user"""
+        counter = 0
+        output = ""
+        cursor = self.db.commands.find({"author": ctx.author.id})
+        total_amount = await cursor.count()
+
+        data = discord.Embed(
+            description="Command statistics of {0}".format(ctx.author))
+        data.add_field(
+            name="Total commands", value=str(total_amount), inline=False)
+
+        ordered_commands = await self.get_commands(cursor)
+        for k, v in ordered_commands.items():
+            output += "{0} used {1} times\n".format(k.capitalize(), v)
+        data.add_field(name="Most used commands", value=output, inline=False)
+
+        try:
+            await ctx.send(embed=data)
+        except discord.Forbidden:
+            await ctx.send("Need permission to embed links")
+
+    @statistics.command(name="guild")
+    async def statistics_guild(self, ctx):
+        """Statistics of this guild
+
+        Only available on Discord Server"""
+        if ctx.guild is None:
+            return await self.bot.send_cmd_help(ctx)
+        output = ""
+        counter = 0
+        cursor = self.db.commands.find({"guild": ctx.guild.id})
+        total_amount = await cursor.count()
+
+        data = discord.Embed(
+            description="Command statistics of {0}".format(ctx.guild))
+        data.add_field(
+            name="Total commands", value=str(total_amount), inline=False)
+
+        ordered_commands = await self.get_commands(cursor)
+        percentages = self.calc_percentage(ordered_commands, total_amount)
+        ranking = await self.collect_users(cursor)
+        for k, v in ordered_commands.items():
+            if counter < 11:
+                output += "{0} used {1} times\n".format(k.capitalize(), v)
+                counter += 1
+        counter = 0
+        output += "\n"
+        for k, v in percentages.items():
+            if counter < 5:
+                #output += "{0}% used the command {1}".format(v, k)
+                for emoji in range(0,round(v/10)):
+                    output += ":eggplant:"
+                output += " {0}% used {1}\n".format(v,k)
+                counter +=1
+        data.add_field(name="Most used commands", value=output, inline=False)
+        counter = 0
+        output = ""
+        for k,v in ranking:
+            if counter < 5:
+                output += "{0}. {1} has sent {2} commands.\n".format(counter, k, v)
+        data.add_field(name="Ranking", value="asdf" + output, inline=False)
+
+        try:
+            await ctx.send(embed=data)
+        except discord.Forbidden:
+            await ctx.send("Need permission to embed links")
+
+    async def get_commands(self, cursor):
+        """Collect commands, returns formatted output string"""
+        commands = {}
+        async for stat in cursor:
+            if stat['command'] in commands:
+                commands[stat['command']] += 1
+            else:
+                commands[stat['command']] = 1
+        ordered_commands = collections.OrderedDict(
+            sorted(commands.items(), key=lambda x: x[1], reverse=True))
+        return ordered_commands
+
+    def calc_percentage(self, ordered_commands, total):
+        percentages = {}
+        for k, v in ordered_commands.items():
+            percentages[k] = round(100 / total * v)
+        ordered_percentages = collections.OrderedDict(
+            sorted(percentages.items(), key=lambda x: x[1], reverse=True))
+        return ordered_percentages
+
+    async def collect_users(self, cursor):
+        users = {}
+        async for stat in cursor:
+            if stat['author'] in users:
+                users[stat['author']] += 1
+            else:
+                users[stat['author']] = 1
+        ordered_commands = collections.OrderedDict(
+            sorted(users.items(), key=lambda x: x[1], reverse=True))
+        return ordered_commands
 
     @commands.command()
     async def uptime(self, ctx):
