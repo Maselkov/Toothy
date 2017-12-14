@@ -62,6 +62,7 @@ class Statistics:
 
         ordered_commands = await self.get_commands(cursor)
         percentages = self.calc_percentage(ordered_commands, total_amount)
+        cursor = self.db.commands.find({"guild": ctx.guild.id})
         ranking = await self.collect_users(cursor)
         for k, v in ordered_commands.items():
             if counter < 11:
@@ -90,7 +91,7 @@ class Statistics:
             await ctx.send("Need permission to embed links")
 
     async def get_commands(self, cursor):
-        """Collect commands, returns formatted output string"""
+        """Collect commands"""
         commands = {}
         async for stat in cursor:
             if stat['command'] in commands:
