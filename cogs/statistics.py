@@ -23,6 +23,7 @@ class Statistics:
     @statistics.command(name="user")
     async def statistics_user(self, ctx):
         """Statistics of the user"""
+        await ctx.trigger_typing()
         cursor = self.db.commands.find({"author": ctx.author.id})
         total_amount = await cursor.count()
         data = discord.Embed(
@@ -47,6 +48,7 @@ class Statistics:
         Only available on Discord Server"""
         if ctx.guild is None:
             return await self.bot.send_cmd_help(ctx)
+        await ctx.trigger_typing()
         cursor = self.db.commands.find({"guild": ctx.guild.id})
         total_amount = await cursor.count()
         # Get data
@@ -75,6 +77,7 @@ class Statistics:
         """Total stats of the bot's commands
 
         Only available to server owner"""
+        await ctx.trigger_typing()
         cursor = self.db.commands.find()
         total_amount = await cursor.count()
 
@@ -99,6 +102,7 @@ class Statistics:
         except discord.Forbidden:
             await ctx.send("Need permission to embed links")
 
+
     async def get_commands(self, cursor, search):
         """Returns ordered dict of commands from cursor and search string in DB"""
         commands = {}
@@ -119,6 +123,8 @@ class Statistics:
         ordered_percentages = collections.OrderedDict(
             sorted(percentages.items(), key=lambda x: x[1], reverse=True))
         return ordered_percentages
+
+    def generate_embed(self):
 
     def generate_commands(self, ordered_commands):
         """Returns the 10 most used commands from ordered_commands"""
