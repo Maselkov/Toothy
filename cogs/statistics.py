@@ -14,7 +14,7 @@ class Statistics:
         self.counter = Counter()
         self.db = self.bot.database.db.statistics
 
-    @commands.group()
+    @commands.group(aliases=["stats"])
     async def statistics(self, ctx):
         """Statistic related commands"""
         if ctx.invoked_subcommand is None:
@@ -72,22 +72,25 @@ class Statistics:
         output += "\n"
         for k, v in percentages.items():
             if counter < 5:
-                #output += "{0}% used the command {1}".format(v, k)
-                for emoji in range(0,round(v/10)):
-                    output += ":record_button:"
-                output += " {0}% used {1}\n".format(v,k)
-                counter +=1
+                bar_count = round(v / 5)
+                for emoji in range(0, bar_count):
+                    output += "▓"
+                tab_count = 20 - bar_count
+                for tab in range(0, tab_count):
+                    output += "░"
+                output += " {0}% used {1}\n".format(v, k)
+                counter += 1
         data.add_field(name="Most used commands", value=output, inline=False)
         counter = 0
         output = ""
-        for k,v in ranking.items():
+        for k, v in ranking.items():
             if counter < 5:
-                counter +=1
+                counter += 1
                 user = ctx.guild.get_member(k)
                 if user is None:
                     user = "Unknown"
                 output += "{0}.\t{1} has sent {2} commands.\n".format(counter, user, v)
-        data.add_field(name="Ranking", value= output, inline=False)
+        data.add_field(name="Ranking", value=output, inline=False)
 
         try:
             await ctx.send(embed=data)
