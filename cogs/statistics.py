@@ -124,8 +124,6 @@ class Statistics:
             sorted(percentages.items(), key=lambda x: x[1], reverse=True))
         return ordered_percentages
 
-    def generate_embed(self):
-
     def generate_commands(self, ordered_commands):
         """Returns the 10 most used commands from ordered_commands"""
         output = ""
