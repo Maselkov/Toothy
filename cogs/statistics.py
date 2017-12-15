@@ -157,7 +157,7 @@ class Statistics:
         for k, v in ranking.items():
             if counter < 5:
                 counter += 1
-                user = await self.bot.get_user_info()
+                user = await self.bot.get_user_info(k)
                 if user is None:
                     user = "Unknown"
                 output += "{0}.\t{1} has sent {2} commands.\n".format(counter, user, v)
