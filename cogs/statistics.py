@@ -23,21 +23,18 @@ class Statistics:
     @statistics.command(name="user")
     async def statistics_user(self, ctx):
         """Statistics of the user"""
-        counter = 0
-        output = ""
         cursor = self.db.commands.find({"author": ctx.author.id})
         total_amount = await cursor.count()
-
         data = discord.Embed(
             description="Command statistics of {0}".format(ctx.author))
         data.add_field(
             name="Total commands", value=str(total_amount), inline=False)
-
         ordered_commands = await self.get_commands(cursor, 'command')
-        for k, v in ordered_commands.items():
-            output += "{0} used {1} times\n".format(k.capitalize(), v)
+        percentages = self.calc_percentage(ordered_commands, total_amount)
+        output = self.generate_commands(ordered_commands)
         data.add_field(name="Most used commands", value=output, inline=False)
-
+        output = self.generate_diagramm(percentages)
+        data.add_field(name="Diagramm", value=output, inline=False)
         try:
             await ctx.send(embed=data)
         except discord.Forbidden:
@@ -50,36 +47,52 @@ class Statistics:
         Only available on Discord Server"""
         if ctx.guild is None:
             return await self.bot.send_cmd_help(ctx)
-        output = ""
-        counter = 0
         cursor = self.db.commands.find({"guild": ctx.guild.id})
         total_amount = await cursor.count()
-
+        # Get data
+        ordered_commands = await self.get_commands(cursor, 'command')
+        percentages = self.calc_percentage(ordered_commands, total_amount)
+        cursor = cursor.rewind()
+        ranking = await self.get_commands(cursor, 'author')
         data = discord.Embed(
             description="Command statistics of {0}".format(ctx.guild))
         data.add_field(
             name="Total commands", value=str(total_amount), inline=False)
-
-        ordered_commands = await self.get_commands(cursor, 'command')
-        percentages = self.calc_percentage(ordered_commands, total_amount)
-        cursor = self.db.commands.find({"guild": ctx.guild.id})
-        ranking = await self.get_commands(cursor, 'author')
-        for k, v in ordered_commands.items():
-            if counter < 11:
-                output += "{0} used {1} times\n".format(k.capitalize(), v)
-                counter += 1
+        output = self.generate_commands(ordered_commands)
         data.add_field(name="Most used commands", value=output, inline=False)
         output = self.generate_diagramm(percentages)
         data.add_field(name="Diagramm", value=output, inline=False)
-        counter = 0
-        output = ""
-        for k, v in ranking.items():
-            if counter < 5:
-                counter += 1
-                user = ctx.guild.get_member(k)
-                if user is None:
-                    user = "Unknown"
-                output += "{0}.\t{1} has sent {2} commands.\n".format(counter, user, v)
+        output = await self.generate_ranking(ctx, ranking)
+        data.add_field(name="Ranking", value=output, inline=False)
+        try:
+            await ctx.send(embed=data)
+        except discord.Forbidden:
+            await ctx.send("Need permission to embed links")
+
+    @statistics.command(name="total")
+    @commands.is_owner()
+    async def statistics_total(self, ctx):
+        """Total stats of the bot's commands
+
+        Only available to server owner"""
+        cursor = self.db.commands.find()
+        total_amount = await cursor.count()
+
+        # Get data
+        ordered_commands = await self.get_commands(cursor, 'command')
+        percentages = self.calc_percentage(ordered_commands, total_amount)
+        cursor = cursor.rewind()
+        ranking = await self.get_commands(cursor, 'author')
+
+        data = discord.Embed(
+            description="Total command statistics")
+        data.add_field(
+            name="Total commands", value=str(total_amount), inline=False)
+        output = self.generate_commands(ordered_commands)
+        data.add_field(name="Most used commands", value=output, inline=False)
+        output = self.generate_diagramm(percentages)
+        data.add_field(name="Diagramm", value=output, inline=False)
+        output = await self.generate_ranking(ctx, ranking)
         data.add_field(name="Ranking", value=output, inline=False)
         try:
             await ctx.send(embed=data)
@@ -107,6 +120,16 @@ class Statistics:
             sorted(percentages.items(), key=lambda x: x[1], reverse=True))
         return ordered_percentages
 
+    def generate_commands(self, ordered_commands):
+        """Returns the 10 most used commands from ordered_commands"""
+        output = ""
+        counter = 0
+        for k, v in ordered_commands.items():
+            if counter < 10:
+                output += "{0} used {1} times\n".format(k.capitalize(), v)
+                counter += 1
+        return output
+
     def generate_diagramm(self, percentages):
         """Generates string of ASCII bar out of ordered_dict of percentages"""
         counter = 0
@@ -121,6 +144,19 @@ class Statistics:
                     output += "░"
                 output += " {0}% used {1}\n".format(v, k)
                 counter += 1
+        return output
+
+    async def generate_ranking(self, ctx, ranking):
+        """Returns the first 5 users that used the most commands"""
+        counter = 0
+        output = ""
+        for k, v in ranking.items():
+            if counter < 5:
+                counter += 1
+                user = await self.bot.get_user_info()
+                if user is None:
+                    user = "Unknown"
+                output += "{0}.\t{1} has sent {2} commands.\n".format(counter, user, v)
         return output
 
     @commands.command()
