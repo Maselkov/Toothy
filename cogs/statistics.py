@@ -68,19 +68,9 @@ class Statistics:
             if counter < 11:
                 output += "{0} used {1} times\n".format(k.capitalize(), v)
                 counter += 1
-        counter = 0
-        output += "\n"
-        for k, v in percentages.items():
-            if counter < 5:
-                bar_count = round(v / 5)
-                for emoji in range(0, bar_count):
-                    output += "▓"
-                tab_count = 20 - bar_count
-                for tab in range(0, tab_count):
-                    output += "░"
-                output += " {0}% used {1}\n".format(v, k)
-                counter += 1
         data.add_field(name="Most used commands", value=output, inline=False)
+        output = self.generate_diagramm(percentages)
+        data.add_field(name="Diagramm", value=output, inline=False)
         counter = 0
         output = ""
         for k, v in ranking.items():
@@ -91,14 +81,13 @@ class Statistics:
                     user = "Unknown"
                 output += "{0}.\t{1} has sent {2} commands.\n".format(counter, user, v)
         data.add_field(name="Ranking", value=output, inline=False)
-
         try:
             await ctx.send(embed=data)
         except discord.Forbidden:
             await ctx.send("Need permission to embed links")
 
     async def get_commands(self, cursor, search):
-        """Collect commands"""
+        """Returns ordered dict of commands from cursor and search string in DB"""
         commands = {}
         async for stat in cursor:
             if stat[search] in commands:
@@ -110,12 +99,29 @@ class Statistics:
         return ordered_commands
 
     def calc_percentage(self, ordered_commands, total):
+        """Generates ordered dict of percentages of used commands from ordered_commands"""
         percentages = {}
         for k, v in ordered_commands.items():
             percentages[k] = round(100 / total * v)
         ordered_percentages = collections.OrderedDict(
             sorted(percentages.items(), key=lambda x: x[1], reverse=True))
         return ordered_percentages
+
+    def generate_diagramm(self, percentages):
+        """Generates string of ASCII bar out of ordered_dict of percentages"""
+        counter = 0
+        output = ""
+        for k, v in percentages.items():
+            if counter < 5:
+                bar_count = round(v / 5)
+                for emoji in range(0, bar_count):
+                    output += "▓"
+                tab_count = 20 - bar_count
+                for tab in range(0, tab_count):
+                    output += "░"
+                output += " {0}% used {1}\n".format(v, k)
+                counter += 1
+        return output
 
     @commands.command()
     async def uptime(self, ctx):
