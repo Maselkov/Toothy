@@ -34,9 +34,9 @@ class Statistics:
             await ctx.send("Need permission to embed links")
 
     @commands.guild_only()
-    @statistics.command(name="guild")
-    async def statistics_guild(self, ctx):
-        """Statistics of this guild
+    @statistics.command(name="server")
+    async def statistics_server(self, ctx):
+        """Statistics of this server
 
         Only available on Discord Server"""
         await ctx.trigger_typing()
