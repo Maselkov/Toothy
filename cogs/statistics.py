@@ -117,7 +117,7 @@ class Statistics:
         ]
         counter = 0
         for k, v in ordered_commands.items():
-            if counter > 10:
+            if counter > 9:
                 break
             if v:
                 output.append("{} {} | {}".format(k.upper(), " " * (
