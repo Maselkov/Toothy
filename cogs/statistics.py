@@ -107,12 +107,25 @@ class Statistics:
 
     def generate_commands(self, ordered_commands):
         """Returns the 10 most used commands from ordered_commands"""
-        output = ""
+        seq = [k for k, v in ordered_commands.items() if v]
+        longest = len(max(seq, key=len))
+        if longest < 7:
+            longest = 7
+        output = [
+            "COMMAND{}COUNT".format(" " * (longest - 4)),
+            "--------{}|-----".format("-" * (longest - 6))
+        ]
         counter = 0
         for k, v in ordered_commands.items():
-            if counter < 10:
-                output += "{0} used {1} times\n".format(k.capitalize(), v)
+            if counter > 10:
+                break
+            if v:
+                output.append("{} {} | {}".format(k.upper(), " " * (
+                    longest - len(k)), v))
                 counter += 1
+        output.append(
+            "--------{}------".format("-" * (longest - len("command") + 2)))
+        output = "```ml\n{}```".format("\n".join(output))
         return output
 
     def generate_diagram(self, percentages):
