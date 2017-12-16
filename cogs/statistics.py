@@ -21,8 +21,8 @@ class Statistics:
         if ctx.invoked_subcommand is None:
             await self.bot.send_cmd_help(ctx)
 
-    @commands.cooldown(1, 15, BucketType.guild)
     @statistics.command(name="user")
+    @commands.cooldown(1, 15, BucketType.user)
     async def statistics_user(self, ctx):
         """Statistics of the user"""
         async with ctx.typing():
