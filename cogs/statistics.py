@@ -102,7 +102,7 @@ class Statistics:
             cursor = cursor.rewind()
             ranking = await self.get_commands(cursor, 'author')
             output = await self.generate_ranking(ctx, ranking)
-            data.add_field(name="Ranking", value=output, inline=False)
+            data.add_field(name="Ranking", value="```{0}```".format(output), inline=False)
         return data
 
     def generate_commands(self, ordered_commands):
@@ -154,7 +154,7 @@ class Statistics:
                 user = await self.bot.get_user_info(k)
                 if user is None:
                     user = "Unknown"
-                output += "{0}.\t{1} has sent {2} commands.\n".format(counter, user, v)
+                output += "{0}. | {1} has sent {2} commands.\n".format(counter, user, v)
         return output
 
     @commands.command()
