@@ -4,6 +4,7 @@ from collections import Counter
 
 import discord
 from discord.ext import commands
+from discord.ext.commands.cooldowns import BucketType
 
 
 class Statistics:
@@ -20,6 +21,7 @@ class Statistics:
         if ctx.invoked_subcommand is None:
             await self.bot.send_cmd_help(ctx)
 
+    @commands.cooldown(1, 15, BucketType.guild)
     @statistics.command(name="user")
     async def statistics_user(self, ctx):
         """Statistics of the user"""
@@ -35,8 +37,9 @@ class Statistics:
             except discord.Forbidden:
                 await ctx.send("Need permission to embed links")
 
-    @commands.guild_only()
     @statistics.command(name="server")
+    @commands.guild_only()
+    @commands.cooldown(1, 15, BucketType.guild)
     async def statistics_server(self, ctx):
         """Statistics of this serverr"""
         async with ctx.typing():
