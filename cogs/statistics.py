@@ -122,10 +122,10 @@ class Statistics:
         for k, v in percentages.items():
             if counter < 5:
                 bar_count = round(v / 5)
-                for emoji in range(0, bar_count):
+                for emoji in range(bar_count):
                     output += "▓"
                 tab_count = 20 - bar_count
-                for tab in range(0, tab_count):
+                for tab in range(tab_count):
                     output += "░"
                 output += " {0}% used {1}\n".format(v, k)
                 counter += 1
