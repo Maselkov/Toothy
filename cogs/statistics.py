@@ -1,6 +1,6 @@
+import collections
 import datetime
 from collections import Counter
-import collections
 
 import discord
 from discord.ext import commands
@@ -23,31 +23,33 @@ class Statistics:
     @statistics.command(name="user")
     async def statistics_user(self, ctx):
         """Statistics of the user"""
-        await ctx.trigger_typing()
-        cursor = self.db.commands.find({"author": ctx.author.id})
-        data = discord.Embed(
-            description="Command statistics of {0}".format(ctx.author))
-        data = await self.generate_embed(ctx, data, cursor, rank=False)
-        try:
-            await ctx.send(embed=data)
-        except discord.Forbidden:
-            await ctx.send("Need permission to embed links")
+        async with ctx.typing():
+            cursor = self.db.commands.find({"author": ctx.author.id})
+            data = discord.Embed(
+                description="Command usage statistics of {0}".format(
+                    ctx.author),
+                color=self.bot.color)
+            data = await self.generate_embed(ctx, data, cursor, rank=False)
+            try:
+                await ctx.send(embed=data)
+            except discord.Forbidden:
+                await ctx.send("Need permission to embed links")
 
     @commands.guild_only()
     @statistics.command(name="server")
     async def statistics_server(self, ctx):
-        """Statistics of this server
-
-        Only available on Discord Server"""
-        await ctx.trigger_typing()
-        cursor = self.db.commands.find({"guild": ctx.guild.id})
-        data = discord.Embed(
-            description="Command statistics of {0}".format(ctx.guild))
-        data = await self.generate_embed(ctx, data, cursor)
-        try:
-            await ctx.send(embed=data)
-        except discord.Forbidden:
-            await ctx.send("Need permission to embed links")
+        """Statistics of this serverr"""
+        async with ctx.typing():
+            cursor = self.db.commands.find({"guild": ctx.guild.id})
+            data = discord.Embed(
+                description="Command usage statistics of {0}".format(
+                    ctx.guild),
+                color=self.bot.color)
+            data = await self.generate_embed(ctx, data, cursor)
+            try:
+                await ctx.send(embed=data)
+            except discord.Forbidden:
+                await ctx.send("Need permission to embed links")
 
     @statistics.command(name="total")
     @commands.is_owner()
@@ -55,19 +57,19 @@ class Statistics:
         """Total stats of the bot's commands
 
         Only available to server owner"""
-        await ctx.trigger_typing()
-        cursor = self.db.commands.find()
-        data = discord.Embed(
-            description="Total command statistics")
-        data = await self.generate_embed(ctx, data, cursor)
-        try:
-            await ctx.send(embed=data)
-        except discord.Forbidden:
-            await ctx.send("Need permission to embed links")
-
+        async with ctx.typing():
+            cursor = self.db.commands.find()
+            data = discord.Embed(
+                description="Total command statistics", color=self.bot.color)
+            data = await self.generate_embed(ctx, data, cursor)
+            try:
+                await ctx.send(embed=data)
+            except discord.Forbidden:
+                await ctx.send("Need permission to embed links")
 
     async def get_commands(self, cursor, search):
-        """Returns ordered dict of commands from cursor and search string in DB"""
+        """Returns ordered dict of commands from cursor
+        and search string in DB"""
         commands = {}
         async for stat in cursor:
             if stat[search] in commands:
@@ -79,7 +81,8 @@ class Statistics:
         return ordered_commands
 
     def calc_percentage(self, ordered_commands, total):
-        """Generates ordered dict of percentages of used commands from ordered_commands"""
+        """Generates ordered dict of percentages of
+        used commands from ordered_commands"""
         percentages = {}
         for k, v in ordered_commands.items():
             percentages[k] = round(100 / total * v)
@@ -93,7 +96,7 @@ class Statistics:
         ordered_commands = await self.get_commands(cursor, 'command')
         percentages = self.calc_percentage(ordered_commands, total_amount)
         data.add_field(
-            name="Total commands", value=str(total_amount), inline=False)
+            name="Total commands used", value=str(total_amount), inline=False)
         output = self.generate_commands(ordered_commands)
         data.add_field(name="Most used commands", value=output, inline=False)
         output = self.generate_diagram(percentages)
@@ -102,7 +105,8 @@ class Statistics:
             cursor = cursor.rewind()
             ranking = await self.get_commands(cursor, 'author')
             output = await self.generate_ranking(ctx, ranking)
-            data.add_field(name="Ranking", value="```{0}```".format(output), inline=False)
+            data.add_field(
+                name="Ranking", value="```{0}```".format(output), inline=False)
         return data
 
     def generate_commands(self, ordered_commands):
@@ -131,7 +135,7 @@ class Statistics:
     def generate_diagram(self, percentages):
         """Generates string of ASCII bar out of ordered_dict of percentages"""
         counter = 0
-        output = ""
+        output = "```\n"
         for k, v in percentages.items():
             if counter < 5:
                 bar_count = round(v / 5)
@@ -142,7 +146,7 @@ class Statistics:
                     output += "░"
                 output += " {0}% used {1}\n".format(v, k)
                 counter += 1
-        return output
+        return output + "```"
 
     async def generate_ranking(self, ctx, ranking):
         """Returns the first 5 users that used the most commands"""
@@ -154,7 +158,8 @@ class Statistics:
                 user = await self.bot.get_user_info(k)
                 if user is None:
                     user = "Unknown"
-                output += "{0}. | {1} has sent {2} commands.\n".format(counter, user, v)
+                output += "{}. | {} | used {} commands\n".format(
+                    counter, user, v)
         return output
 
     @commands.command()
