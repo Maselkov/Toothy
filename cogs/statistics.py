@@ -41,7 +41,7 @@ class Statistics:
     @commands.guild_only()
     @commands.cooldown(1, 15, BucketType.guild)
     async def statistics_server(self, ctx):
-        """Statistics of this serverr"""
+        """Statistics of this server"""
         async with ctx.typing():
             cursor = self.db.commands.find({"guild": ctx.guild.id})
             data = discord.Embed(
