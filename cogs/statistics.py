@@ -27,19 +27,18 @@ class Statistics:
         cursor = self.db.commands.find({"author": ctx.author.id})
         data = discord.Embed(
             description="Command statistics of {0}".format(ctx.author))
-        data = await self.generate_embed(ctx, data, cursor, False)
+        data = await self.generate_embed(ctx, data, cursor, rank=False)
         try:
             await ctx.send(embed=data)
         except discord.Forbidden:
             await ctx.send("Need permission to embed links")
 
+    @commands.guild_only()
     @statistics.command(name="guild")
     async def statistics_guild(self, ctx):
         """Statistics of this guild
 
         Only available on Discord Server"""
-        if ctx.guild is None:
-            return await self.bot.send_cmd_help(ctx)
         await ctx.trigger_typing()
         cursor = self.db.commands.find({"guild": ctx.guild.id})
         data = discord.Embed(
@@ -88,7 +87,7 @@ class Statistics:
             sorted(percentages.items(), key=lambda x: x[1], reverse=True))
         return ordered_percentages
 
-    async def generate_embed(self, ctx, data, cursor, rank=True):
+    async def generate_embed(self, ctx, data, cursor, *, rank=True):
         # Get data
         total_amount = await cursor.count()
         ordered_commands = await self.get_commands(cursor, 'command')
@@ -97,8 +96,8 @@ class Statistics:
             name="Total commands", value=str(total_amount), inline=False)
         output = self.generate_commands(ordered_commands)
         data.add_field(name="Most used commands", value=output, inline=False)
-        output = self.generate_diagramm(percentages)
-        data.add_field(name="Diagramm", value=output, inline=False)
+        output = self.generate_diagram(percentages)
+        data.add_field(name="Diagram", value=output, inline=False)
         if rank:
             cursor = cursor.rewind()
             ranking = await self.get_commands(cursor, 'author')
@@ -116,7 +115,7 @@ class Statistics:
                 counter += 1
         return output
 
-    def generate_diagramm(self, percentages):
+    def generate_diagram(self, percentages):
         """Generates string of ASCII bar out of ordered_dict of percentages"""
         counter = 0
         output = ""
