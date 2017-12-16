@@ -53,6 +53,7 @@ class Toothy(commands.AutoShardedBot):
         self.available = True
         self.global_prefixes = data["PREFIXES"]
         self.uptime = datetime.datetime.utcnow()
+        self.color = discord.Color(0xbdff3d)
 
     async def on_ready(self):
         self.uptime = datetime.datetime.utcnow()
