@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import logging
 import traceback
@@ -79,6 +80,14 @@ class Global:
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(data, indent=4, sort_keys=True))
         await ctx.send("Extension reloaded succesfully")
+
+    @commands.command()
+    async def doas(self, ctx, member: discord.Member, *, command):
+        """Do a command as if another member had done it"""
+        message = copy.copy(ctx.message)
+        message.content = ctx.prefix + command
+        message.author = member
+        await self.bot.process_commands(message)
 
     @commands.group()
     async def presence(self, ctx):
