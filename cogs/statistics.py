@@ -25,17 +25,9 @@ class Statistics:
         """Statistics of the user"""
         await ctx.trigger_typing()
         cursor = self.db.commands.find({"author": ctx.author.id})
-        total_amount = await cursor.count()
         data = discord.Embed(
             description="Command statistics of {0}".format(ctx.author))
-        data.add_field(
-            name="Total commands", value=str(total_amount), inline=False)
-        ordered_commands = await self.get_commands(cursor, 'command')
-        percentages = self.calc_percentage(ordered_commands, total_amount)
-        output = self.generate_commands(ordered_commands)
-        data.add_field(name="Most used commands", value=output, inline=False)
-        output = self.generate_diagramm(percentages)
-        data.add_field(name="Diagramm", value=output, inline=False)
+        data = await self.generate_embed(ctx, data, cursor, False)
         try:
             await ctx.send(embed=data)
         except discord.Forbidden:
@@ -50,22 +42,9 @@ class Statistics:
             return await self.bot.send_cmd_help(ctx)
         await ctx.trigger_typing()
         cursor = self.db.commands.find({"guild": ctx.guild.id})
-        total_amount = await cursor.count()
-        # Get data
-        ordered_commands = await self.get_commands(cursor, 'command')
-        percentages = self.calc_percentage(ordered_commands, total_amount)
-        cursor = cursor.rewind()
-        ranking = await self.get_commands(cursor, 'author')
         data = discord.Embed(
             description="Command statistics of {0}".format(ctx.guild))
-        data.add_field(
-            name="Total commands", value=str(total_amount), inline=False)
-        output = self.generate_commands(ordered_commands)
-        data.add_field(name="Most used commands", value=output, inline=False)
-        output = self.generate_diagramm(percentages)
-        data.add_field(name="Diagramm", value=output, inline=False)
-        output = await self.generate_ranking(ctx, ranking)
-        data.add_field(name="Ranking", value=output, inline=False)
+        data = await self.generate_embed(ctx, data, cursor)
         try:
             await ctx.send(embed=data)
         except discord.Forbidden:
@@ -79,24 +58,9 @@ class Statistics:
         Only available to server owner"""
         await ctx.trigger_typing()
         cursor = self.db.commands.find()
-        total_amount = await cursor.count()
-
-        # Get data
-        ordered_commands = await self.get_commands(cursor, 'command')
-        percentages = self.calc_percentage(ordered_commands, total_amount)
-        cursor = cursor.rewind()
-        ranking = await self.get_commands(cursor, 'author')
-
         data = discord.Embed(
             description="Total command statistics")
-        data.add_field(
-            name="Total commands", value=str(total_amount), inline=False)
-        output = self.generate_commands(ordered_commands)
-        data.add_field(name="Most used commands", value=output, inline=False)
-        output = self.generate_diagramm(percentages)
-        data.add_field(name="Diagramm", value=output, inline=False)
-        output = await self.generate_ranking(ctx, ranking)
-        data.add_field(name="Ranking", value=output, inline=False)
+        data = await self.generate_embed(ctx, data, cursor)
         try:
             await ctx.send(embed=data)
         except discord.Forbidden:
@@ -123,6 +87,24 @@ class Statistics:
         ordered_percentages = collections.OrderedDict(
             sorted(percentages.items(), key=lambda x: x[1], reverse=True))
         return ordered_percentages
+
+    async def generate_embed(self, ctx, data, cursor, rank=True):
+        # Get data
+        total_amount = await cursor.count()
+        ordered_commands = await self.get_commands(cursor, 'command')
+        percentages = self.calc_percentage(ordered_commands, total_amount)
+        data.add_field(
+            name="Total commands", value=str(total_amount), inline=False)
+        output = self.generate_commands(ordered_commands)
+        data.add_field(name="Most used commands", value=output, inline=False)
+        output = self.generate_diagramm(percentages)
+        data.add_field(name="Diagramm", value=output, inline=False)
+        if rank:
+            cursor = cursor.rewind()
+            ranking = await self.get_commands(cursor, 'author')
+            output = await self.generate_ranking(ctx, ranking)
+            data.add_field(name="Ranking", value=output, inline=False)
+        return data
 
     def generate_commands(self, ordered_commands):
         """Returns the 10 most used commands from ordered_commands"""
