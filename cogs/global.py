@@ -33,8 +33,8 @@ class Global:
         try:
             self.bot.load_extension(extension)
         except Exception as e:
-            return await ctx.send(
-                "```py\n{}\n```".format(traceback.format_exc()))
+            return await ctx.send("```py\n{}\n```".format(
+                traceback.format_exc()))
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             data = json.load(f)
             data[extension] = True
@@ -51,8 +51,8 @@ class Global:
         try:
             self.bot.unload_extension(extension)
         except Exception as e:
-            return await ctx.send(
-                "```py\n{}\n```".format(traceback.format_exc()))
+            return await ctx.send("```py\n{}\n```".format(
+                traceback.format_exc()))
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             data = json.load(f)
             data[extension] = False
@@ -67,13 +67,13 @@ class Global:
         try:
             self.bot.unload_extension(extension)
         except Exception as e:
-            return await ctx.send(
-                "```py\n{}\n```".format(traceback.format_exc()))
+            return await ctx.send("```py\n{}\n```".format(
+                traceback.format_exc()))
         try:
             self.bot.load_extension(extension)
         except Exception as e:
-            return await ctx.send(
-                "```py\n{}\n```".format(traceback.format_exc()))
+            return await ctx.send("```py\n{}\n```".format(
+                traceback.format_exc()))
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             data = json.load(f)
             data[extension] = True
@@ -158,12 +158,12 @@ class Global:
             try:
                 streamer = "https://www.twitch.tv/{}".format(args[0])
                 game = discord.Game(type=1, url=streamer, name=args[1])
-            except:
+            except IndexError:
                 return await self.bot.send_cmd_help(ctx)
         else:
             try:
                 game = discord.Game(name=args[0])
-            except:
+            except IndexError:
                 return await self.bot.send_cmd_help(ctx)
         await self.bot.change_presence(
             game=game, status=current_presence["status"])
@@ -207,6 +207,17 @@ class Global:
         else:
             await ctx.send("User not on blacklist")
 
+    @commands.command()
+    async def toggleprivileged(self, ctx, user: discord.User):
+        """Toggles user's privileged status.
+
+        Privileged users can bypass command cooldowns."""
+        status = not await self.bot.user_is_privileged(user)
+        await self.bot.database.set_user(user, {"vip": status})
+        if status:
+            return await ctx.send("User is now privileged")
+        return await ctx.send("User is no longer privileged")
+
     def get_current_presence(self, ctx):
         guild = ctx.guild
         if guild is None:
@@ -226,7 +237,7 @@ class Global:
                     games = settings["games"] if settings["games"] else [None]
                     for game in games:
                         if self.bot.available:
-                            game = discord.Game(name=game)
+                            game = discord.Game(name=game.format(bot=self.bot))
                             await self.bot.change_presence(
                                 game=game, status=status)
                         await asyncio.sleep(settings["interval"])
@@ -242,13 +253,14 @@ def setup(bot):
     cog = Global(bot)
     loop = bot.loop
     loop.create_task(
-        bot.database.setup_cog(cog, {
-            "presence": {
-                "interval": 180,
-                "status": "online",
-                "enabled": False,
-                "games": []
-            }
-        }))
+        bot.database.setup_cog(
+            cog, {
+                "presence": {
+                    "interval": 180,
+                    "status": "online",
+                    "enabled": False,
+                    "games": []
+                }
+            }))
     loop.create_task(cog.presence_manager())
     bot.add_cog(cog)

@@ -91,11 +91,15 @@ class Toothy(commands.AutoShardedBot):
             await ctx.send("This command cannot be used in DMs")
             ctx.command.reset_cooldown(ctx)
         elif isinstance(exc, commands.CommandOnCooldown):
-            await ctx.send("You cannot use this command again for the next "
-                           "{:.2f} seconds"
-                           "".format(exc.retry_after))
-        elif isinstance(exc, (commands.MissingRequiredArgument,
-                              commands.BadArgument)):
+            if await self.user_is_privileged(ctx.author):
+                await ctx.reinvoke()
+            else:
+                await ctx.send(
+                    "You cannot use this command again for the next "
+                    "{:.2f} seconds"
+                    "".format(exc.retry_after))
+        elif isinstance(
+                exc, (commands.MissingRequiredArgument, commands.BadArgument)):
             await self.send_cmd_help(ctx)
             ctx.command.reset_cooldown(ctx)
         elif isinstance(exc, commands.DisabledCommand):
@@ -127,6 +131,18 @@ class Toothy(commands.AutoShardedBot):
         if not doc:
             return False
         return doc.get("blacklisted", False)
+
+    async def user_is_privileged(self, user):
+        doc = await self.database.users.find_one({"_id": user.id}, {"vip": 1})
+        if not doc:
+            return False
+        return doc.get("vip", False)
+
+    def is_privileged(self):
+        async def predicate(ctx):
+            return await self.user_is_privileged(ctx.author)
+
+        return commands.check(predicate)
 
     async def send_cmd_help(self, ctx):  # To keep compatiblity with Red
         if ctx.invoked_subcommand:
