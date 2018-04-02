@@ -16,6 +16,13 @@ STATUSES = {
     "invisible": discord.Status.invisible
 }
 
+ACTIVITY_TYPES = {
+    "listening": discord.ActivityType.listening,
+    "watching": discord.ActivityType.watching,
+    "playing": discord.ActivityType.playing,
+    "streaming": discord.ActivityType.streaming
+}
+
 
 class Global:
     """Control the bot's global settings"""
@@ -137,6 +144,19 @@ class Global:
                                                {"presence.status": status})
         await ctx.send("Status changed")
 
+    @manager.command(name="type")
+    async def presence_mgr_type(self, ctx, activity_type):
+        """Sets type for presence manager
+
+        Possible values: playing, listening, watching
+        """
+        activity_type = activity_type.lower()
+        if activity_type not in ACTIVITY_TYPES:
+            return await self.bot.send_cmd_help(ctx)
+        await self.bot.database.set_cog_config(
+            self, {"presence.type": activity_type})
+        await ctx.send("Activity type changed")
+
     @presence.command()
     async def set(self, ctx, mode, *args):
         """Sets presence. Will be overriden by presence manager if active.
@@ -166,7 +186,7 @@ class Global:
             except IndexError:
                 return await self.bot.send_cmd_help(ctx)
         await self.bot.change_presence(
-            game=game, status=current_presence["status"])
+            activity=game, status=current_presence["status"])
         await ctx.send("Done.")
 
     @presence.command(name="status")
@@ -178,7 +198,7 @@ class Global:
             await self.bot.send_cmd_help(ctx)
             return
         await self.bot.change_presence(
-            status=STATUSES[status], game=current_presence["game"])
+            status=STATUSES[status], activity=current_presence["game"])
         await ctx.send("Status changed.")
 
     @commands.group()
@@ -222,7 +242,7 @@ class Global:
         guild = ctx.guild
         if guild is None:
             return {"game": None, "status": None}
-        return {"game": guild.me.game, "status": guild.me.status}
+        return {"game": guild.me.activity, "status": guild.me.status}
 
     async def presence_manager(self):
         while self is self.bot.get_cog("Global"):
@@ -234,12 +254,15 @@ class Global:
                 settings = doc["presence"]
                 if settings["enabled"]:
                     status = STATUSES[settings["status"]]
+                    activity_type = ACTIVITY_TYPES[settings["type"]]
                     games = settings["games"] if settings["games"] else [None]
                     for game in games:
                         if self.bot.available:
-                            game = discord.Game(name=game.format(bot=self.bot))
+                            activity = discord.Activity(
+                                name=game.format(bot=self.bot),
+                                type=activity_type)
                             await self.bot.change_presence(
-                                game=game, status=status)
+                                activity=activity, status=status)
                         await asyncio.sleep(settings["interval"])
                 else:
                     await asyncio.sleep(300)
@@ -258,6 +281,7 @@ def setup(bot):
                 "presence": {
                     "interval": 180,
                     "status": "online",
+                    "type": "playing",
                     "enabled": False,
                     "games": []
                 }
