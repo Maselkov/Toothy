@@ -1,5 +1,6 @@
 import urllib.parse
 
+import discord
 from motor.motor_asyncio import AsyncIOMotorClient
 
 
@@ -83,6 +84,20 @@ class MongoController:
         name = cog.__class__.__name__
         return await self.configs.find_one({"cog_name": name})
 
+    async def get(self, obj, cog=None):
+        """Get channel/guild/user. Pass a cog instance in order to return
+           cog specific settings"""
+        coll = self.obj_to_collection(obj)
+        doc = await coll.find_one({"_id": obj.id})
+        if doc and cog:
+            try:
+                cog_doc = doc["cogs"][cog.__class__.__name__]
+                cog_doc.update(_id=doc["_id"])
+                return cog_doc
+            except KeyError:
+                return {}
+        return doc or {}
+
     async def set_user(self,
                        user,
                        settings: dict,
@@ -133,6 +148,18 @@ class MongoController:
             "cog_name": cog.__class__.__name__
         }, {operator: settings})
 
+    async def set(self, obj, settings: dict, cog=None, *, operator="$set"):
+        """Set channel/guild/user. Use dot notation in settings.
+        If cog is passed, the root will be the
+        cog's embedded setting document"""
+        coll = self.obj_to_collection(obj)
+        if cog:
+            settings = self.dot_notation(cog, settings)
+        await coll.update_one(
+            {
+                "_id": obj.id
+            }, {operator: settings}, upsert=True)
+
     def get_users_cursor(self, search: dict, cog=None):
         if cog:
             search = self.dot_notation(cog, search)
@@ -169,3 +196,12 @@ class MongoController:
         for k, v in settings.items():
             d["cogs.{}.{}".format(cog.__class__.__name__, k)] = v
         return d
+
+    def obj_to_collection(self, obj):
+        if isinstance(obj, (discord.User, discord.Member)):
+            return self.users
+        if isinstance(obj, discord.Guild):
+            return self.guilds
+        if isinstance(obj, discord.TextChannel):
+            return self.channels
+        raise TypeError("Must be channel/user/guild")
