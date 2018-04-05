@@ -4,6 +4,7 @@
     "DATABASE": {
         "host": "localhost",
         "port": 27017,
+        "name": "toothy",
         "credentials": {
             "user": null,
             "pass": null,

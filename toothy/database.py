@@ -27,7 +27,8 @@ class MongoController:
             return uri
 
         self.client = AsyncIOMotorClient(mongo_uri())
-        self.db = self.client.toothy
+        db_name = settings.get("name", "toothy")
+        self.db = self.client[db_name]
         self.users = self.db.users
         self.guilds = self.db.guilds
         self.channels = self.db.channels
