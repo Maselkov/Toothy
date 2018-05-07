@@ -161,20 +161,34 @@ class MongoController:
                 "_id": obj.id
             }, {operator: settings}, upsert=True)
 
-    def get_users_cursor(self, search: dict, cog=None):
+    def get_users_cursor(self, search: dict, cog=None, *, batch_size: int = 0):
         if cog:
             search = self.dot_notation(cog, search)
-        return self.users.find(search, modifiers={"$snapshot": True})
+        cursor = self.users.find(search, modifiers={"$snapshot": True})
+        if batch_size:
+            return cursor.batch_size(batch_size)
+        return cursor
 
-    def get_guilds_cursor(self, search: dict, cog=None):
+    def get_guilds_cursor(self, search: dict, cog=None, *,
+                          batch_size: int = 0):
         if cog:
             search = self.dot_notation(cog, search)
-        return self.guilds.find(search, modifiers={"$snapshot": True})
+        cursor = self.guilds.find(search, modifiers={"$snapshot": True})
+        if batch_size:
+            return cursor.batch_size(batch_size)
+        return cursor
 
-    def get_channels_cursor(self, search: dict, cog=None):
+    def get_channels_cursor(self,
+                            search: dict,
+                            cog=None,
+                            *,
+                            batch_size: int = 0):
         if cog:
             search = self.dot_notation(cog, search)
-        return self.channels.find(search, modifiers={"$snapshot": True})
+        cursor = self.channels.find(search, modifiers={"$snapshot": True})
+        if batch_size:
+            return cursor.batch_size(batch_size)
+        return cursor
 
     async def setup_cog(self, cog, default_settings):
         name = cog.__class__.__name__
