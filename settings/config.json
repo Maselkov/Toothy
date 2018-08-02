@@ -18,5 +18,6 @@
     },
     "OWNER_ID": null,
     "DESCRIPTION": "https://github.com/Maselkov/Toothy",
-    "PREFIXES": [">"]
+    "PREFIXES": [">"],
+    "CASE_INSENSITIVE_COMMANDS": true
 }

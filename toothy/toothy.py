@@ -18,6 +18,7 @@ with open("settings/config.json", encoding="utf-8", mode="r") as f:
     SELFBOT = data["SELFBOT"]
     OWNER_ID = data["OWNER_ID"]
     DB_SETTINGS = data["DATABASE"]
+    CASE_INSENSITIVE = data["CASE_INSENSITIVE_COMMANDS"]
 
 if not TOKEN:
     print("Token not set in config.json")
@@ -51,7 +52,8 @@ class Toothy(commands.AutoShardedBot):
             description=DESCRIPTION,
             pm_help=None if not SELFBOT else False,
             self_bot=SELFBOT,
-            owner_id=OWNER_ID)
+            owner_id=OWNER_ID,
+            case_insensitive=CASE_INSENSITIVE)
         self.database = MongoController(DB_SETTINGS)
         self.available = True
         self.global_prefixes = data["PREFIXES"]
