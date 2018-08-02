@@ -48,6 +48,7 @@ class Global:
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(data, indent=4, sort_keys=True))
         await ctx.send("Extension loaded succesfully")
+        await self.bot.disable_commands(self)
 
     @commands.command(name="unload")
     async def unload_extension(self, ctx, *, name: str):
@@ -87,6 +88,7 @@ class Global:
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(data, indent=4, sort_keys=True))
         await ctx.send("Extension reloaded succesfully")
+        await self.bot.disable_commands(self)
 
     @commands.command()
     async def doas(self, ctx, member: discord.Member, *, command):
@@ -227,6 +229,49 @@ class Global:
         else:
             await ctx.send("User not on blacklist")
 
+    @commands.group(name="command")
+    async def cmd_disable(self, ctx):
+        """Disable/enable commands globally"""
+        if ctx.invoked_subcommand is None:
+            await self.bot.send_cmd_help(ctx)
+
+    @cmd_disable.command(name="disable")
+    async def cmd_disable_off(self, ctx, *, cmd):
+        """Globally disable a command"""
+        cmd = cmd.lower()
+        cmd_obj = self.bot.get_command(cmd)
+        if not cmd_obj:
+            return await ctx.send("Invalid command")
+        if not cmd_obj.enabled:
+            return await ctx.send("This command is already disabled")
+        await self.bot.database.set_cog_config(
+            self, {"disabled_commands": cmd}, operator="$push")
+        self.bot.disable_command(cmd_obj)
+        await ctx.send("`{}` disabled".format(cmd_obj.name))
+
+    @cmd_disable.command(name="enable")
+    async def cmd_disable_on(self, ctx, *, cmd):
+        """Globally enable a command"""
+        cmd = cmd.lower()
+        cmd_obj = self.bot.get_command(cmd)
+        if not cmd_obj:
+            return await ctx.send("Invalid command")
+        if cmd_obj.enabled:
+            return await ctx.send("This command is already enabled")
+        await self.bot.database.set_cog_config(
+            self, {"disabled_commands": cmd}, operator="$pull")
+        cmd_obj.enabled = True
+        cmd_obj.hidden = False
+        await ctx.send("`{}` enabled".format(cmd_obj.name))
+
+    @cmd_disable.command(name="list")
+    async def cmd_disable_list(self, ctx):
+        """List disabled commands"""
+        commands = "\n".join(await self.bot.get_disabled_commands(self))
+        if not commands:
+            return await ctx.send("There are currently no disabled commands")
+        await ctx.send("Disabled commands are:```\n{}\n```".format(commands))
+
     @commands.command()
     async def toggleprivileged(self, ctx, user: discord.User):
         """Toggles user's privileged status.
@@ -284,7 +329,8 @@ def setup(bot):
                     "type": "playing",
                     "enabled": False,
                     "games": []
-                }
+                },
+                "disabled_commands": []
             }))
     loop.create_task(cog.presence_manager())
     bot.add_cog(cog)

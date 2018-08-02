@@ -1,10 +1,13 @@
 import datetime
 import json
+import logging
+import sys
+
+import aiohttp
 import discord
 from discord.ext import commands
+
 from .database import MongoController
-import sys
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -54,9 +57,13 @@ class Toothy(commands.AutoShardedBot):
         self.global_prefixes = data["PREFIXES"]
         self.uptime = datetime.datetime.utcnow()
         self.color = discord.Color(0xbdff3d)
+        self.avatar_file = None
 
     async def on_ready(self):
         self.uptime = datetime.datetime.utcnow()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(self.user.avatar_url_as(format="png")) as r:
+                self.avatar_file = await r.read()
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             extensions = json.load(f)
         for name, state in extensions.items():
@@ -67,11 +74,30 @@ class Toothy(commands.AutoShardedBot):
                     print("{}: {}".format(e.__class__.__name__, str(e)))
                     print("Failed to load {}".format(name))
                     state = False
+        global_cog = self.get_cog("Global")
+        if not global_cog:
+            print("GLobal cog not loaded, exiting")
+            sys.exit(1)
+        await self.disable_commands(global_cog)
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(extensions, indent=4, sort_keys=True))
-
         print("Toothy ready")
         print("Serving {} guilds".format(len(self.guilds)))
+
+    async def get_disabled_commands(self, global_cog):
+        config = await self.database.get_cog_config(global_cog)
+        return config.get("disabled_commands", [])
+
+    def disable_command(self, cmd_obj):
+        if cmd_obj:
+            cmd_obj.hidden = True
+            cmd_obj.enabled = False
+
+    async def disable_commands(self, global_cog):
+        disabled = await self.get_disabled_commands(global_cog)
+        for cmd in disabled:
+            obj = self.get_command(cmd)
+            self.disable_command(obj)
 
     async def on_message(self, message):
         user = message.author
