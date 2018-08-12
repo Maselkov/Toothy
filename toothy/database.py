@@ -85,11 +85,11 @@ class MongoController:
         name = cog.__class__.__name__
         return await self.configs.find_one({"cog_name": name})
 
-    async def get(self, obj, cog=None):
+    async def get(self, obj, cog=None, *, projection: dict = None):
         """Get channel/guild/user. Pass a cog instance in order to return
            cog specific settings"""
         coll = self.obj_to_collection(obj)
-        doc = await coll.find_one({"_id": obj.id})
+        doc = await coll.find_one({"_id": obj.id}, projection)
         if doc and cog:
             try:
                 cog_doc = doc["cogs"][cog.__class__.__name__]
@@ -98,6 +98,11 @@ class MongoController:
             except KeyError:
                 return {}
         return doc or {}
+
+    async def get_flag(self, obj, flag):
+        doc = await self.get(obj, projection={"flags": 1, "_id": 0})
+        flags = doc.get("flags", [])
+        return flag.lower() in flags
 
     async def set_user(self,
                        user,
@@ -160,6 +165,11 @@ class MongoController:
             {
                 "_id": obj.id
             }, {operator: settings}, upsert=True)
+
+    async def set_flag(self, obj, **kwargs):
+        for flag, value in kwargs.items():
+            operator = "$push" if value else "$pull"
+            await self.set(obj, {"flags": flag}, operator=operator)
 
     def get_users_cursor(self, search: dict, cog=None, *, batch_size: int = 0):
         if cog:

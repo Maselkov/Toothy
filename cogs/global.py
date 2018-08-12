@@ -277,8 +277,8 @@ class Global:
         """Toggles user's privileged status.
 
         Privileged users can bypass command cooldowns."""
-        status = not await self.bot.user_is_privileged(user)
-        await self.bot.database.set_user(user, {"vip": status})
+        status = not await self.bot.database.get_flag(ctx.author, "vip")
+        await self.bot.database.set_flag(ctx.author, vip=status)
         if status:
             return await ctx.send("User is now privileged")
         return await ctx.send("User is no longer privileged")
