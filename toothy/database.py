@@ -213,7 +213,7 @@ class MongoController:
                 new_keys += 1
                 doc[k] = v
         if new_keys:
-            await self.configs.replace_one({"cog_name": name}, {doc})
+            await self.configs.replace_one({"cog_name": name}, doc)
             print("{} new settings in {}".format(new_keys, name))
 
     def dot_notation(self, cog, settings):
