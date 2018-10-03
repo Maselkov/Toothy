@@ -7,6 +7,8 @@ import aiohttp
 import discord
 from discord.ext import commands
 
+from cogs.utils import context
+
 from .database import MongoController
 
 log = logging.getLogger(__name__)
@@ -59,6 +61,7 @@ class Toothy(commands.AutoShardedBot):
         self.global_prefixes = data["PREFIXES"]
         self.uptime = datetime.datetime.utcnow()
         self.color = discord.Color(0xbdff3d)
+        self.session = aiohttp.ClientSession(loop=self.loop)
         self.avatar_file = None
 
     async def on_ready(self):
@@ -88,7 +91,9 @@ class Toothy(commands.AutoShardedBot):
 
     async def get_disabled_commands(self, global_cog):
         config = await self.database.get_cog_config(global_cog)
-        return config.get("disabled_commands", [])
+        if config:
+            return config.get("disabled_commands", [])
+        return []
 
     def disable_command(self, cmd_obj):
         if cmd_obj:
@@ -113,6 +118,12 @@ class Toothy(commands.AutoShardedBot):
             if await self.guild_is_ignored(message.guild):
                 return
         await self.process_commands(message)
+
+    async def process_commands(self, message):
+        ctx = await self.get_context(message, cls=context.ToothyContext)
+        if not ctx.valid:
+            return
+        await self.invoke(ctx)
 
     async def on_command_error(self, ctx, exc):
         if isinstance(exc, commands.NoPrivateMessage):
@@ -178,6 +189,10 @@ class Toothy(commands.AutoShardedBot):
             pages = await self.formatter.format_help_for(ctx, ctx.command)
             for page in pages:
                 await ctx.send(page)
+
+    async def close(self):
+        await super().close()
+        await self.session.close()
 
     def save_config(self):
         with open("settings/config.json", encoding="utf-8", mode="r") as f:
