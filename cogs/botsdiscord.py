@@ -1,7 +1,6 @@
 import json
 import logging
 
-import aiohttp
 from discord.ext import commands
 
 log = logging.getLogger(__name__)
@@ -12,10 +11,6 @@ class BotsDiscord:
 
     def __init__(self, bot):
         self.bot = bot
-        self.session = aiohttp.ClientSession(loop=self.bot.loop)
-
-    def __unload(self):
-        self.session.close()
 
     async def __local_check(self, ctx):
         return await self.bot.is_owner(ctx.author)
@@ -36,7 +31,7 @@ class BotsDiscord:
         url = base_url + "api/bots/{}/stats".format(self.bot.user.id)
         payload = {"server_count": len(self.bot.guilds)}
         headers = {"Authorization": token, "Content-Type": "application/json"}
-        async with self.session.post(
+        async with self.bot.session.post(
                 url, data=json.dumps(payload), headers=headers) as r:
             log.info("Payload: {} Response: {}".format(payload, r.status))
 
