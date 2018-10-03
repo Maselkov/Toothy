@@ -114,10 +114,10 @@ class MongoController:
         cog's embedded setting document"""
         if cog:
             settings = self.dot_notation(cog, settings)
-        await self.users.update_one(
-            {
-                "_id": user.id
-            }, {operator: settings}, upsert=True)
+        await self.users.update_one({
+            "_id": user.id
+        }, {operator: settings},
+                                    upsert=True)
 
     async def set_guild(self,
                         guild,
@@ -129,10 +129,10 @@ class MongoController:
         cog's embedded setting document"""
         if cog:
             settings = self.dot_notation(cog, settings)
-        await self.guilds.update_one(
-            {
-                "_id": guild.id
-            }, {operator: settings}, upsert=True)
+        await self.guilds.update_one({
+            "_id": guild.id
+        }, {operator: settings},
+                                     upsert=True)
 
     async def set_channel(self,
                           channel,
@@ -144,27 +144,29 @@ class MongoController:
         cog's embedded setting document"""
         if cog:
             settings = self.dot_notation(cog, settings)
-        await self.channels.update_one(
-            {
-                "_id": channel.id
-            }, {operator: settings}, upsert=True)
+        await self.channels.update_one({
+            "_id": channel.id
+        }, {operator: settings},
+                                       upsert=True)
 
     async def set_cog_config(self, cog, settings, *, operator="$set"):
         await self.configs.update_one({
             "cog_name": cog.__class__.__name__
         }, {operator: settings})
 
-    async def set(self, obj, settings: dict, cog=None, *, operator="$set"):
+    async def set(self, obj, settings: dict, cog=None, *, operator="set"):
         """Set channel/guild/user. Use dot notation in settings.
         If cog is passed, the root will be the
         cog's embedded setting document"""
         coll = self.obj_to_collection(obj)
         if cog:
             settings = self.dot_notation(cog, settings)
-        await coll.update_one(
-            {
-                "_id": obj.id
-            }, {operator: settings}, upsert=True)
+        if not operator.startswith("$"):
+            operator = "$" + operator
+        await coll.update_one({
+            "_id": obj.id
+        }, {operator: settings},
+                              upsert=True)
 
     async def set_flag(self, obj, **kwargs):
         for flag, value in kwargs.items():
@@ -200,6 +202,34 @@ class MongoController:
             return cursor.batch_size(batch_size)
         return cursor
 
+    async def iter(self,
+                   collection: str,
+                   search: dict,
+                   cog=None,
+                   *,
+                   batch_size: int = 100,
+                   subdocs: list = None):
+        """Asynchronously iterate over a collection
+        Collection can be users/guilds/channels
+        Subdocs is a list of strings, being sub document names.
+        The deepest subdoc will be the one returned
+        """
+        coll = self.str_to_collection(collection)
+        if cog:
+            search = self.dot_notation(cog, search)
+        cursor = coll.find(search)
+        if batch_size:
+            cursor = cursor.batch_size(batch_size)
+        async for doc in cursor:
+            doc_id = doc["_id"]
+            if cog:
+                doc = doc["cogs"][cog.__class__.__name__]
+            if subdocs:
+                for d in subdocs:
+                    doc = doc[d]
+            doc["_id"] = doc_id
+            yield doc
+
     async def setup_cog(self, cog, default_settings):
         name = cog.__class__.__name__
         doc = await self.configs.find_one({"cog_name": name})
@@ -230,3 +260,9 @@ class MongoController:
         if isinstance(obj, discord.TextChannel):
             return self.channels
         raise TypeError("Must be channel/user/guild")
+
+    def str_to_collection(self, name):
+        name = name.lower()
+        if name not in ["guilds", "users", "channels"]:
+            raise TypeError("Collection name be channels/users/guilds")
+        return self.db[name]
