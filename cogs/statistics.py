@@ -31,7 +31,12 @@ class Statistics:
                 description="Command usage statistics of {0}".format(
                     ctx.author),
                 color=self.bot.color)
-            data = await self.generate_embed(ctx, data, cursor, rank=False)
+            count = await self.db.commands.count_documents({
+                "author":
+                ctx.author.id
+            })
+            data = await self.generate_embed(
+                ctx, data, cursor, count, rank=False)
             try:
                 await ctx.send(embed=data)
             except discord.Forbidden:
@@ -48,7 +53,11 @@ class Statistics:
                 description="Command usage statistics of {0}".format(
                     ctx.guild),
                 color=self.bot.color)
-            data = await self.generate_embed(ctx, data, cursor)
+            count = await self.db.commands.count_documents({
+                "guild":
+                ctx.guild.id
+            })
+            data = await self.generate_embed(ctx, data, cursor, count)
             try:
                 await ctx.send(embed=data)
             except discord.Forbidden:
@@ -64,7 +73,8 @@ class Statistics:
             cursor = self.db.commands.find()
             data = discord.Embed(
                 description="Total command statistics", color=self.bot.color)
-            data = await self.generate_embed(ctx, data, cursor)
+            count = await self.db.commands.count_documents({})
+            data = await self.generate_embed(ctx, data, cursor, count)
             try:
                 await ctx.send(embed=data)
             except discord.Forbidden:
@@ -93,9 +103,9 @@ class Statistics:
             sorted(percentages.items(), key=lambda x: x[1], reverse=True))
         return ordered_percentages
 
-    async def generate_embed(self, ctx, data, cursor, *, rank=True):
+    async def generate_embed(self, ctx, data, cursor, count, *, rank=True):
         # Get data
-        total_amount = await cursor.count()
+        total_amount = count
         ordered_commands = await self.get_commands(cursor, 'command')
         percentages = self.calc_percentage(ordered_commands, total_amount)
         data.add_field(
@@ -127,11 +137,11 @@ class Statistics:
             if counter > 9:
                 break
             if v:
-                output.append("{} {} | {}".format(k.upper(), " " * (
-                    longest - len(k)), v))
+                output.append("{} {} | {}".format(k.upper(),
+                                                  " " * (longest - len(k)), v))
                 counter += 1
-        output.append(
-            "--------{}------".format("-" * (longest - len("command") + 2)))
+        output.append("--------{}------".format(
+            "-" * (longest - len("command") + 2)))
         output = "```ml\n{}```".format("\n".join(output))
         return output
 
