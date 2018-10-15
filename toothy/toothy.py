@@ -21,6 +21,7 @@ with open("settings/config.json", encoding="utf-8", mode="r") as f:
     OWNER_ID = data["OWNER_ID"]
     DB_SETTINGS = data["DATABASE"]
     CASE_INSENSITIVE = data["CASE_INSENSITIVE_COMMANDS"]
+    COLOR = int(data["COLOR"], 16)
 
 if not TOKEN:
     print("Token not set in config.json")
@@ -56,11 +57,11 @@ class Toothy(commands.AutoShardedBot):
             self_bot=SELFBOT,
             owner_id=OWNER_ID,
             case_insensitive=CASE_INSENSITIVE)
-        self.database = MongoController(DB_SETTINGS)
+        self.database = MongoController(self, DB_SETTINGS)
         self.available = True
         self.global_prefixes = data["PREFIXES"]
         self.uptime = datetime.datetime.utcnow()
-        self.color = discord.Color(0xbdff3d)
+        self.color = discord.Color(COLOR)
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.avatar_file = None
 
