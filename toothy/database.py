@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 class MongoController:
-    def __init__(self, settings):
+    def __init__(self, bot, settings):
         def mongo_uri():
             credentials = settings["credentials"]
             uri = "mongodb://"
@@ -26,6 +26,7 @@ class MongoController:
                         uri += "&{}={}".format(option, value)
             return uri
 
+        self.bot = bot
         self.client = AsyncIOMotorClient(mongo_uri())
         db_name = settings.get("name", "toothy")
         self.db = self.client[db_name]
@@ -222,12 +223,14 @@ class MongoController:
             cursor = cursor.batch_size(batch_size)
         async for doc in cursor:
             doc_id = doc["_id"]
+            obj = self.get_obj(doc_id, collection)
             if cog:
                 doc = doc["cogs"][cog.__class__.__name__]
             if subdocs:
                 for d in subdocs:
                     doc = doc[d]
             doc["_id"] = doc_id
+            doc["_obj"] = obj
             yield doc
 
     async def setup_cog(self, cog, default_settings):
@@ -266,3 +269,10 @@ class MongoController:
         if name not in ["guilds", "users", "channels"]:
             raise TypeError("Collection name be channels/users/guilds")
         return self.db[name]
+
+    def get_obj(self, object_id, name):
+        name = name.lower()
+        if name.endswith("s"):
+            name = name[:-1]
+        name = "get_" + name
+        return getattr(self, name)(object_id)
