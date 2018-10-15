@@ -5,6 +5,7 @@ import logging
 import traceback
 
 import discord
+import random
 from discord.ext import commands
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class Global:
 
     def __init__(self, bot):
         self.bot = bot
+        self.presence_manager_current_index = 0
 
     async def __local_check(self, ctx):
         return await self.bot.is_owner(ctx.author)
@@ -114,11 +116,28 @@ class Global:
             return
 
     @manager.command(name="interval")
-    async def presence_mgr_interval(self, ctx, interval: int):
-        """Interval at which game will be changed, in seconds"""
-        await self.bot.database.set_cog_config(self,
-                                               {"presence.interval": interval})
-        await ctx.send("Interval set to {} seconds".format(str(interval)))
+    async def presence_mgr_interval(self, ctx, interval: int,
+                                    maximum: int = 0):
+        """Interval at which game will be changed, in seconds
+
+        If you provide 2 intervals, the interval will be randomly chosen
+        between them
+        """
+        if not maximum:
+            await self.bot.database.set_cog_config(
+                self, {
+                    "presence.interval": interval,
+                    "presence.interval_range": None
+                })
+            return await ctx.send("Interval set to {} seconds".format(
+                str(interval)))
+        await self.bot.database.set_cog_config(
+            self, {
+                "presence.interval": None,
+                "presence.interval_range": [interval, maximum]
+            })
+        await ctx.send("Interval set to range between {} and {}".format(
+            interval, maximum))
 
     @manager.command(name="games")
     async def presence_mgr_games(self, ctx, *games):
@@ -158,6 +177,13 @@ class Global:
         await self.bot.database.set_cog_config(
             self, {"presence.type": activity_type})
         await ctx.send("Activity type changed")
+
+    @manager.command(name="randomize")
+    async def presence_mgr_randomize(self, ctx, yes_no: bool):
+        """Sets whether to randomize status"""
+        await self.bot.database.set_cog_config(self,
+                                               {"presence.randomize": yes_no})
+        await ctx.send("Toggled randomization")
 
     @presence.command()
     async def set(self, ctx, mode, *args):
@@ -298,19 +324,36 @@ class Global:
                     continue
                 settings = doc["presence"]
                 if settings["enabled"]:
+                    games = settings.get("games", [])
                     status = STATUSES[settings["status"]]
                     activity_type = ACTIVITY_TYPES[settings["type"]]
-                    games = settings["games"] if settings["games"] else [None]
-                    for game in games:
-                        if self.bot.available:
-                            activity = discord.Activity(
-                                name=game.format(bot=self.bot),
-                                type=activity_type)
-                            await self.bot.change_presence(
-                                activity=activity, status=status)
-                        await asyncio.sleep(settings["interval"])
-                else:
-                    await asyncio.sleep(300)
+                    randomize = settings.get("randomize", False)
+                    interval = settings.get("interval")
+                    if not interval:
+                        interval_range = settings.get("interval_range")
+                        if interval_range:
+                            interval = random.randrange(*interval_range)
+                    if not interval and not interval_range:
+                        await asyncio.sleep(10)
+                        continue
+                    if self.bot.available:
+                        if not games:
+                            game = None
+                        elif randomize:
+                            game = random.choice(games)
+                        else:
+                            try:
+                                game = games[self.
+                                             presence_manager_current_index]
+                                self.presence_manager_current_index += 1
+                            except IndexError:
+                                self.presence_manager_current_index = 0
+                                game = games[0]
+                        activity = discord.Activity(
+                            name=game.format(bot=self.bot), type=activity_type)
+                        await self.bot.change_presence(
+                            activity=activity, status=status)
+                    await asyncio.sleep(interval)
             except Exception as e:
                 log.exception(e)
                 await asyncio.sleep(300)
@@ -325,9 +368,11 @@ def setup(bot):
             cog, {
                 "presence": {
                     "interval": 180,
+                    "interval_range": [],
                     "status": "online",
                     "type": "playing",
                     "enabled": False,
+                    "randomize": False,
                     "games": []
                 },
                 "disabled_commands": []
