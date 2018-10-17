@@ -275,4 +275,4 @@ class MongoController:
         if name.endswith("s"):
             name = name[:-1]
         name = "get_" + name
-        return getattr(self, name)(object_id)
+        return getattr(self.bot, name)(object_id)
