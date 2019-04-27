@@ -34,7 +34,7 @@ class BotSite:
                 self.url, payload, r.status))
 
 
-class ListingSites:
+class ListingSites(commands.Cog):
     """Posting your bot information to bot listing sites"""
 
     def __init__(self, bot):
@@ -42,7 +42,7 @@ class ListingSites:
         self.sites = []
         self.load_sites()
 
-    async def __local_check(self, ctx):
+    async def cog_check(self, ctx):
         return await self.bot.is_owner(ctx.author)
 
     @commands.command()

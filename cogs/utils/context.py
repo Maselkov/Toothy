@@ -8,14 +8,6 @@ class ToothyContext(commands.Context):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def default_check(self, message):
-        return (message.author == self.author
-                and message.channel == self.channel)
-
-    async def send_help(self):
-        cmd = self.bot.get_command("help")
-        await self.invoke(cmd, command=self.command.qualified_name)
-
     async def get_answer(self,
                          prompt=None,
                          *,
@@ -24,10 +16,15 @@ class ToothyContext(commands.Context):
                          check=None,
                          delete_answer=False,
                          return_full=False):
+
         if prompt:
             await self.send(prompt)
         if not check:
-            check = self.default_check
+
+            def check(self, message):
+                return (message.author == self.author
+                        and message.channel == self.channel)
+
         try:
             answer = await self.bot.wait_for(
                 "message", timeout=timeout, check=check)

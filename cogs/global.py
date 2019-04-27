@@ -25,14 +25,14 @@ ACTIVITY_TYPES = {
 }
 
 
-class Global:
+class Global(commands.Cog):
     """Control the bot's global settings"""
 
     def __init__(self, bot):
         self.bot = bot
         self.presence_manager_current_index = 0
 
-    async def __local_check(self, ctx):
+    async def cog_check(self, ctx):
         return await self.bot.is_owner(ctx.author)
 
     @commands.command(name="load")
@@ -75,20 +75,10 @@ class Global:
         """Reloads an extension"""
         extension = "cogs." + name.strip()
         try:
-            self.bot.unload_extension(extension)
+            self.bot.reload_extension(extension)
         except Exception as e:
             return await ctx.send("```py\n{}\n```".format(
                 traceback.format_exc()))
-        try:
-            self.bot.load_extension(extension)
-        except Exception as e:
-            return await ctx.send("```py\n{}\n```".format(
-                traceback.format_exc()))
-        with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
-            data = json.load(f)
-            data[extension] = True
-        with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
-            f.write(json.dumps(data, indent=4, sort_keys=True))
         await ctx.send("Extension reloaded succesfully")
         await self.bot.disable_commands(self)
 

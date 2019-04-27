@@ -7,7 +7,7 @@ from discord.ext import commands
 from discord.ext.commands.cooldowns import BucketType
 
 
-class Statistics:
+class Statistics(commands.Cog):
     """Bot statistics"""
 
     def __init__(self, bot):
@@ -80,7 +80,7 @@ class Statistics:
             except discord.Forbidden:
                 await ctx.send("Need permission to embed links")
 
-    async def get_commands(self, cursor, search):
+    async def get_commands_stats(self, cursor, search):
         """Returns ordered dict of commands from cursor
         and search string in DB"""
         commands = {}
@@ -106,7 +106,7 @@ class Statistics:
     async def generate_embed(self, ctx, data, cursor, count, *, rank=True):
         # Get data
         total_amount = count
-        ordered_commands = await self.get_commands(cursor, 'command')
+        ordered_commands = await self.get_commands_stats(cursor, 'command')
         percentages = self.calc_percentage(ordered_commands, total_amount)
         data.add_field(
             name="Total commands used", value=str(total_amount), inline=False)
@@ -116,7 +116,7 @@ class Statistics:
         data.add_field(name="Diagram", value=output, inline=False)
         if rank:
             cursor = cursor.rewind()
-            ranking = await self.get_commands(cursor, 'author')
+            ranking = await self.get_commands_stats(cursor, 'author')
             output = await self.generate_ranking(ctx, ranking)
             data.add_field(
                 name="Ranking", value="```{0}```".format(output), inline=False)

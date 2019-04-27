@@ -67,9 +67,9 @@ class Toothy(commands.AutoShardedBot):
 
     async def on_ready(self):
         self.uptime = datetime.datetime.utcnow()
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.user.avatar_url_as(format="png")) as r:
-                self.avatar_file = await r.read()
+        #        async with aiohttp.ClientSession() as session:
+        #            async with session.get(self.user.avatar_url_as(format="png")) as r:
+        #                self.avatar_file = await r.read()
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             extensions = json.load(f)
         for name, state in extensions.items():
@@ -140,7 +140,7 @@ class Toothy(commands.AutoShardedBot):
                     "".format(exc.retry_after))
         elif isinstance(
                 exc, (commands.MissingRequiredArgument, commands.BadArgument)):
-            await self.send_cmd_help(ctx)
+            await ctx.send_help()
             ctx.command.reset_cooldown(ctx)
         elif isinstance(exc, commands.DisabledCommand):
             await ctx.send("This command is disabled")
@@ -180,16 +180,8 @@ class Toothy(commands.AutoShardedBot):
             return False
         return doc.get("blacklisted", False)
 
-    async def send_cmd_help(self, ctx):  # To keep compatiblity with Red
-        if ctx.invoked_subcommand:
-            pages = await self.formatter.format_help_for(
-                ctx, ctx.invoked_subcommand)
-            for page in pages:
-                await ctx.send(page)
-        else:
-            pages = await self.formatter.format_help_for(ctx, ctx.command)
-            for page in pages:
-                await ctx.send(page)
+    async def send_cmd_help(self, ctx):  # lol
+        return ctx.send_help()
 
     async def close(self):
         await super().close()

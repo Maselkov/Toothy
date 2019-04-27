@@ -148,7 +148,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
             discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 
-class Music:
+class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.states = {}
@@ -259,11 +259,13 @@ class Music:
         doc = await self.bot.database.get(guild, self)
         current_playlists = doc.get("playlists")
         if current_playlists:
-            if url in current_playlists.values():
-                return await ctx.send("Playlist already exists in this server!"
-                                      )
-            if name in current_playlists:
-                return await ctx.send("Playlist name already exists")
+            for pl in current_playlists:
+                if url == pl["url"]:
+                    return await ctx.send(
+                        f"Playlist already exists in this server with the name {pl['name']}."
+                    )
+                if name == pl["name"]:
+                    return await ctx.send("Playlist name already exists")
         playlist = {
             "name": name,
             "url": url.replace("https://www.youtube.com/playlist?list=", "")

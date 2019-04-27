@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 
 
-class Meta:
+class Meta(commands.Cog):
     """Commands related to the bot itself"""
 
     def __init__(self, bot):
