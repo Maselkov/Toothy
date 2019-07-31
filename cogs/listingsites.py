@@ -59,12 +59,15 @@ class ListingSites(commands.Cog):
         for site in self.sites:
             await site.post()
 
+    @commands.Cog.listener()
     async def on_ready(self):
         await self.post_stats()
 
+    @commands.Cog.listener()
     async def on_guild_remove(self, guild):
         await self.post_stats()
 
+    @commands.Cog.listener()
     async def on_guild_join(self, guild):
         await self.post_stats()
 

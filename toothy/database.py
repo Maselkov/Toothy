@@ -164,7 +164,7 @@ class MongoController:
             settings = self.dot_notation(cog, settings)
         if not operator.startswith("$"):
             operator = "$" + operator
-        await coll.update_one({
+        return await coll.update_one({
             "_id": obj.id
         }, {operator: settings},
                               upsert=True)

@@ -140,7 +140,7 @@ class Toothy(commands.AutoShardedBot):
                     "".format(exc.retry_after))
         elif isinstance(
                 exc, (commands.MissingRequiredArgument, commands.BadArgument)):
-            await ctx.send_help()
+            await ctx.send_help(ctx.command)
             ctx.command.reset_cooldown(ctx)
         elif isinstance(exc, commands.DisabledCommand):
             await ctx.send("This command is disabled")
@@ -181,7 +181,7 @@ class Toothy(commands.AutoShardedBot):
         return doc.get("blacklisted", False)
 
     async def send_cmd_help(self, ctx):  # lol
-        return ctx.send_help()
+        return ctx.send_help(ctx.command)
 
     async def close(self):
         await super().close()

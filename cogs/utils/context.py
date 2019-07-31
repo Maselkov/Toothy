@@ -21,7 +21,7 @@ class ToothyContext(commands.Context):
             await self.send(prompt)
         if not check:
 
-            def check(self, message):
+            def check(message):
                 return (message.author == self.author
                         and message.channel == self.channel)
 

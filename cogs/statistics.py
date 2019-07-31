@@ -19,7 +19,7 @@ class Statistics(commands.Cog):
     async def statistics(self, ctx):
         """Statistic related commands"""
         if ctx.invoked_subcommand is None:
-            await self.bot.send_cmd_help(ctx)
+            await ctx.send_help(ctx.command)
 
     @statistics.command(name="user")
     @commands.cooldown(1, 15, BucketType.user)
@@ -168,7 +168,7 @@ class Statistics(commands.Cog):
         for k, v in ranking.items():
             if counter < 5:
                 counter += 1
-                user = await self.bot.get_user_info(k)
+                user = await self.bot.fetch_user(k)
                 if user is None:
                     user = "Unknown"
                 output += "{}. | {} | used {} commands\n".format(
@@ -200,9 +200,11 @@ class Statistics(commands.Cog):
 
         return fmt.format(d=days, h=hours, m=minutes, s=seconds)
 
+    @commands.Cog.listener()
     async def on_message(self, message):
         self.counter["messages"] += 1
 
+    @commands.Cog.listener()
     async def on_command(self, ctx):
         self.counter["invoked_commands"] += 1
         guild = ctx.guild.id if ctx.guild else None
