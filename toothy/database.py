@@ -209,7 +209,8 @@ class MongoController:
                    cog=None,
                    *,
                    batch_size: int = 100,
-                   subdocs: list = None):
+                   subdocs: list = None,
+                   **kwargs):
         """Asynchronously iterate over a collection
         Collection can be users/guilds/channels
         Subdocs is a list of strings, being sub document names.
@@ -218,7 +219,7 @@ class MongoController:
         coll = self.str_to_collection(collection)
         if cog:
             search = self.dot_notation(cog, search)
-        cursor = coll.find(search)
+        cursor = coll.find(search, **kwargs)
         if batch_size:
             cursor = cursor.batch_size(batch_size)
         async for doc in cursor:
