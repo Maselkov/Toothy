@@ -22,6 +22,7 @@ with open("settings/config.json", encoding="utf-8", mode="r") as f:
     DB_SETTINGS = data["DATABASE"]
     CASE_INSENSITIVE = data["CASE_INSENSITIVE_COMMANDS"]
     COLOR = int(data["COLOR"], 16)
+    INTENTS = discord.Intents(**data["INTENTS"])
 
 if not TOKEN:
     print("Token not set in config.json")
@@ -50,13 +51,13 @@ class Toothy(commands.AutoShardedBot):
                 "<@!{.user.id}> ".format(self), self.user.mention + " "
             ]
 
-        super().__init__(
-            command_prefix=prefix_callable,
-            description=DESCRIPTION,
-            pm_help=None if not SELFBOT else False,
-            self_bot=SELFBOT,
-            owner_id=OWNER_ID,
-            case_insensitive=CASE_INSENSITIVE)
+        super().__init__(command_prefix=prefix_callable,
+                         description=DESCRIPTION,
+                         pm_help=None if not SELFBOT else False,
+                         self_bot=SELFBOT,
+                         owner_id=OWNER_ID,
+                         case_insensitive=CASE_INSENSITIVE,
+                         intents=INTENTS)
         self.database = MongoController(self, DB_SETTINGS)
         self.available = True
         self.global_prefixes = data["PREFIXES"]
@@ -67,9 +68,6 @@ class Toothy(commands.AutoShardedBot):
 
     async def on_ready(self):
         self.uptime = datetime.datetime.utcnow()
-        #        async with aiohttp.ClientSession() as session:
-        #            async with session.get(self.user.avatar_url_as(format="png")) as r:
-        #                self.avatar_file = await r.read()
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             extensions = json.load(f)
         for name, state in extensions.items():
@@ -148,9 +146,8 @@ class Toothy(commands.AutoShardedBot):
             message = ("Something went wrong. If the issue persists, please "
                        "contact the author. ")
             await ctx.send(message)
-            log.exception(
-                "Exception in command " + ctx.command.qualified_name,
-                exc_info=exc.original)
+            log.exception("Exception in command " + ctx.command.qualified_name,
+                          exc_info=exc.original)
         elif isinstance(exc, commands.MissingPermissions):
             missing = [
                 p.replace("guild", "server").replace("_", " ").title()
@@ -165,17 +162,15 @@ class Toothy(commands.AutoShardedBot):
             pass
 
     async def user_is_ignored(self, user):
-        doc = await self.database.users.find_one({
-            "_id": user.id
-        }, {"blacklisted": 1})
+        doc = await self.database.users.find_one({"_id": user.id},
+                                                 {"blacklisted": 1})
         if not doc:
             return False
         return doc.get("blacklisted", False)
 
     async def guild_is_ignored(self, guild):
-        doc = await self.database.guilds.find_one({
-            "_id": guild.id
-        }, {"blacklisted": 1})
+        doc = await self.database.guilds.find_one({"_id": guild.id},
+                                                  {"blacklisted": 1})
         if not doc:
             return False
         return doc.get("blacklisted", False)

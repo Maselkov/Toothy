@@ -18,7 +18,23 @@
     },
     "OWNER_ID": null,
     "DESCRIPTION": "https://github.com/Maselkov/Toothy",
-    "PREFIXES": [">"],
+    "PREFIXES": [
+        ">"
+    ],
     "CASE_INSENSITIVE_COMMANDS": true,
-    "COLOR" : "0xbdff3d"
+    "COLOR": "0xbdff3d",
+    "INTENTS": {
+        "guilds": true,
+        "members": true,
+        "bans": true,
+        "emojis": true,
+        "integrations": true,
+        "webhooks": true,
+        "invites": true,
+        "voice_states": true,
+        "presences": true,
+        "messages": true,
+        "reactions": true,
+        "typing": true
+    }
 }
