@@ -26,8 +26,9 @@ class ToothyContext(commands.Context):
                         and message.channel == self.channel)
 
         try:
-            answer = await self.bot.wait_for(
-                "message", timeout=timeout, check=check)
+            answer = await self.bot.wait_for("message",
+                                             timeout=timeout,
+                                             check=check)
         except asyncio.TimeoutError:
             if timeout_message:
                 await self.send(timeout_message)
@@ -40,3 +41,20 @@ class ToothyContext(commands.Context):
         if return_full:
             return answer
         return answer.content
+
+    async def get_reaction(self, message, emojis, *, timeout=120, check=None):
+        def reaction_check(reaction, user):
+            if user.bot:
+                return False
+            emoji = reaction.emoji
+            if emoji not in emojis:
+                return False
+            return reaction.message.id == message.id and user == self.author
+
+        try:
+            reaction, _ = await self.bot.wait_for("reaction_add",
+                                                  check=reaction_check,
+                                                  timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
+        return reaction
