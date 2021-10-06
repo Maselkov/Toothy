@@ -156,6 +156,15 @@ class Toothy(commands.AutoShardedBot):
             await ctx.send(
                 "You're missing the following permissions to use this "
                 "command: `{}`".format(", ".join(missing)))
+        elif isinstance(exc, commands.BotMissingPermissions):
+            missing = [
+                p.replace("guild", "server").replace("_", " ").title()
+                for p in exc.missing_perms
+            ]
+            await ctx.send(
+                "The bot is missing the following permissions to be able to "
+                "run this command:\n`{}`\nPlease add them then try again".
+                format(", ".join(missing)))
         elif isinstance(exc, commands.CommandNotFound):
             pass
         elif isinstance(exc, commands.CheckFailure):
