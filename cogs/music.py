@@ -36,7 +36,7 @@ class NoJoinError(Exception):
 
 
 class VoiceState:
-    def __init__(self, ctx, volume):
+    def __init__(self, ctx, volume, repeat=False):
         self.current = None
         self.player = None
         self.guild = ctx.guild
@@ -47,6 +47,7 @@ class VoiceState:
         self.queue = asyncio.Queue()
         self.skip_votes = set()
         self.volume = volume
+        self.repeat = repeat
         self.time_started_playing = None
         self.audio_player = self.bot.loop.create_task(self.audio_player_task())
 
@@ -72,10 +73,13 @@ class VoiceState:
         while True:
             self.next.clear()
             try:
-                self.current = await asyncio.wait_for(
-                    self.queue.get(), timeout=300, loop=self.bot.loop)
+                self.current = await asyncio.wait_for(self.queue.get(),
+                                                      timeout=300,
+                                                      loop=self.bot.loop)
             except asyncio.TimeoutError:
                 return await self.cog.stop_playing(self.guild)
+            if self.repeat:
+                await self.queue.put(self.current)
             self.player = await YTDLSource.from_url(self.current.url)
             self.player.volume = self.volume
             self.time_started_playing = datetime.datetime.now()
@@ -144,8 +148,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if 'entries' in data:
             data = data['entries'][0]
         filename = data["url"]
-        return cls(
-            discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options),
+                   data=data)
 
 
 class Music(commands.Cog):
@@ -188,6 +192,20 @@ class Music(commands.Cog):
         if guild.id in self.states:
             self.states[guild.id].update_volume(volume)
         await ctx.send("Volume is now {:.0%}".format(volume))
+
+    @commands.command()
+    async def repeat(self, ctx):
+        """Toggle repeat mode"""
+        guild = ctx.guild
+        doc = await self.bot.database.get(guild, self)
+        repeat = not doc.get("repeat", False)
+        await self.bot.database.set(guild, {"repeat": repeat}, self)
+        if guild.id in self.states:
+            self.states[guild.id].repeat = repeat
+        if repeat:
+            await ctx.send("Repeat is now enabled")
+        else:
+            await ctx.send("Repeat is now disabled")
 
     @commands.command()
     async def stop(self, ctx):
@@ -270,8 +288,9 @@ class Music(commands.Cog):
             "name": name,
             "url": url.replace("https://www.youtube.com/playlist?list=", "")
         }
-        await self.bot.database.set(
-            guild, {"playlists": playlist}, self, operator="$push")
+        await self.bot.database.set(guild, {"playlists": playlist},
+                                    self,
+                                    operator="$push")
         await ctx.send("Playlist created with name {0}".format(name) +
                        " and playlist URL {0}".format(url))
 
@@ -284,8 +303,9 @@ class Music(commands.Cog):
         playlist = self.find_playlist(name, current_playlists)
         if not playlist:
             return await ctx.send("That playlist does not exist.")
-        await self.bot.database.set(
-            guild, {"playlists": playlist}, self, operator="$pull")
+        await self.bot.database.set(guild, {"playlists": playlist},
+                                    self,
+                                    operator="$pull")
         await ctx.send("Playlist has been removed!")
 
     @playlist.command(name="show")
@@ -322,10 +342,10 @@ class Music(commands.Cog):
         doc = await self.bot.database.get(guild, self)
         playlists = doc.get("playlists")
         playlist = self.find_playlist(name, playlists)
-        await self.enqueue(
-            ctx,
-            "https://www.youtube.com/playlist?list=" + playlist["url"],
-            shuffle=True)
+        await self.enqueue(ctx,
+                           "https://www.youtube.com/playlist?list=" +
+                           playlist["url"],
+                           shuffle=True)
 
     def find_playlist(self, name, playlists):
         for playlist in playlists:
@@ -339,7 +359,8 @@ class Music(commands.Cog):
         if not state:
             doc = await self.bot.database.get(guild, self)
             volume = doc.get("volume", 1)
-            state = VoiceState(ctx, volume)
+            repeat = doc.get("repeat", False)
+            state = VoiceState(ctx, volume, repeat)
             self.states[guild.id] = state
         return state
 
@@ -430,16 +451,17 @@ class Music(commands.Cog):
             counter += 1
         embed = discord.Embed(title="🎵 Queue 🎵", color=self.bot.color)
         if state.is_playing():
-            embed.add_field(
-                name="Current", value=song_line(state.current), inline=False)
+            embed.add_field(name="Current",
+                            value=song_line(state.current),
+                            inline=False)
         if not queue:
-            embed.add_field(
-                name="Upcoming",
-                value="No songs are in the queue",
-                inline=False)
+            embed.add_field(name="Upcoming",
+                            value="No songs are in the queue",
+                            inline=False)
         else:
-            embed.add_field(
-                name="Upcoming", value="\n".join(upcoming), inline=False)
+            embed.add_field(name="Upcoming",
+                            value="\n".join(upcoming),
+                            inline=False)
         embed.set_footer(
             text="{} songs are in the queue.".format(len(state.queue._queue)))
         return embed
@@ -469,41 +491,38 @@ class Music(commands.Cog):
             return output + ""
 
         entry = state.current
-        embed = discord.Embed(
-            title=entry.title, url=entry.video_url, color=0xFE0000)
+        embed = discord.Embed(title=entry.title,
+                              url=entry.video_url,
+                              color=0xFE0000)
         uploader_url = entry.uploader_url or discord.Embed.Empty
         embed.set_author(name=entry.uploader, url=uploader_url)
         embed.set_thumbnail(url=entry.thumbnail)
         if entry.description:
             if len(entry.description) > 500:
                 entry.description = entry.description[:500] + "..."
-            embed.add_field(
-                name="Video Description",
-                value=entry.description,
-                inline=False)
+            embed.add_field(name="Video Description",
+                            value=entry.description,
+                            inline=False)
         if entry.likes is not None and entry.dislikes is not None:
             likes = format_number(entry.likes)
             dislikes = format_number(entry.dislikes)
-            embed.add_field(
-                name="Likes | Dislikes",
-                value="\\👍 {} | {} \\👎".format(likes, dislikes),
-                inline=True)
+            embed.add_field(name="Likes | Dislikes",
+                            value="\\👍 {} | {} \\👎".format(likes, dislikes),
+                            inline=True)
         if entry.view_count is not None:
             view_count = format_number(entry.view_count)
-            embed.add_field(
-                name="View Count",
-                value="\\📺 {}".format(view_count),
-                inline=True)
+            embed.add_field(name="View Count",
+                            value="\\📺 {}".format(view_count),
+                            inline=True)
         if entry.duration:
             duration_percentage = (state.time_elapsed / entry.duration) * 100
             graph = diagram(duration_percentage)
-            embed.add_field(
-                name="Duration",
-                value="|" + graph + "|" +
-                "  {0[0]}:{0[1]:02d}/{1[0]}:{1[1]:02d}".format(
-                    divmod(math.floor(state.time_elapsed), 60),
-                    divmod(entry.duration, 60)),
-                inline=False)
+            embed.add_field(name="Duration",
+                            value="|" + graph + "|" +
+                            "  {0[0]}:{0[1]:02d}/{1[0]}:{1[1]:02d}".format(
+                                divmod(math.floor(state.time_elapsed), 60),
+                                divmod(entry.duration, 60)),
+                            inline=False)
         return embed
 
 
