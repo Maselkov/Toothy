@@ -6,6 +6,7 @@ import sys
 import aiohttp
 import discord
 from discord.ext import commands
+from discord_slash import SlashCommand
 
 from cogs.utils import context
 
@@ -23,6 +24,7 @@ with open("settings/config.json", encoding="utf-8", mode="r") as f:
     CASE_INSENSITIVE = data["CASE_INSENSITIVE_COMMANDS"]
     COLOR = int(data["COLOR"], 16)
     INTENTS = discord.Intents(**data["INTENTS"])
+    DEBUG_GUILD = data["DEBUG_GUILD"]
 
 if not TOKEN:
     print("Token not set in config.json")
@@ -65,9 +67,10 @@ class Toothy(commands.AutoShardedBot):
         self.color = discord.Color(COLOR)
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.avatar_file = None
-
-    async def on_ready(self):
         self.uptime = datetime.datetime.utcnow()
+        self.slash = SlashCommand(self,
+                                  sync_on_cog_reload=True,
+                                  debug_guild=DEBUG_GUILD)
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             extensions = json.load(f)
         for name, state in extensions.items():
@@ -82,9 +85,12 @@ class Toothy(commands.AutoShardedBot):
         if not global_cog:
             print("GLobal cog not loaded, exiting")
             sys.exit(1)
-        await self.disable_commands(global_cog)
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(extensions, indent=4, sort_keys=True))
+        self.loop.create_task(self.disable_commands(global_cog))
+        self.loop.create_task(self.slash.sync_all_commands())
+
+    async def on_ready(self):
         print("Toothy ready")
         print("Serving {} guilds".format(len(self.guilds)))
 
