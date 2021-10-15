@@ -9,6 +9,8 @@ import discord
 import youtube_dl
 import youtube_dl.utils
 from discord.ext import commands
+from discord_slash import cog_ext
+from discord_slash.model import SlashCommandOptionType
 
 log = logging.getLogger(__name__)
 
@@ -161,14 +163,17 @@ class Music(commands.Cog):
         for state in self.states.values():
             self.bot.loop.create_task(self.stop_playing(state.guild))
 
-    @commands.command(usage="<url or search term>")
-    async def play(self, ctx, *, url):
-        """Play a song,
-
-        Supported sites include youtube and most other video streaming sites"""
+    @cog_ext.cog_slash(options=[{
+        "name": "url",
+        "description": "URL or search term",
+        "type": SlashCommandOptionType.STRING,
+        "required": True
+    }])
+    async def play(self, ctx, url: str):
+        """Play a song. Can be YouTube or many different sites"""
         await self.enqueue(ctx, url)
 
-    @commands.command(name="queue")
+    @cog_ext.cog_slash(name="queue")
     async def show_queue(self, ctx):
         """Show the current song queue"""
         if not self.is_connected(ctx):
@@ -178,12 +183,14 @@ class Music(commands.Cog):
             return await ctx.send("Not playing")
         await ctx.send(embed=self.queue_embed(state))
 
-    @commands.command()
+    @cog_ext.cog_slash(options=[{
+        "name": "volume",
+        "description": "Value between 0 and 100",
+        "type": SlashCommandOptionType.INTEGER,
+        "required": True
+    }])
     async def volume(self, ctx, volume: int):
-        """Changes the player's volume
-
-        Value between 0 and 100
-        """
+        """Changes the player's volume"""
         if not 0 <= volume <= 100:
             return await ctx.send("Value must be between 0 and 100")
         guild = ctx.guild
@@ -193,7 +200,7 @@ class Music(commands.Cog):
             self.states[guild.id].update_volume(volume)
         await ctx.send("Volume is now {:.0%}".format(volume))
 
-    @commands.command()
+    @cog_ext.cog_slash()
     async def repeat(self, ctx):
         """Toggle repeat mode"""
         guild = ctx.guild
@@ -207,7 +214,7 @@ class Music(commands.Cog):
         else:
             await ctx.send("Repeat is now disabled")
 
-    @commands.command()
+    @cog_ext.cog_slash()
     async def stop(self, ctx):
         """Stops and disconnects the bot from voice"""
         if not self.is_connected(ctx):
@@ -221,7 +228,7 @@ class Music(commands.Cog):
         return await ctx.send(
             "There are other people in the channel, vote to skip instead")
 
-    @commands.command()
+    @cog_ext.cog_slash()
     async def skip(self, ctx):
         """Skip the current song"""
         if not self.is_connected(ctx):
@@ -251,7 +258,7 @@ class Music(commands.Cog):
         await ctx.send("Voted to skip {}.\n{} vote{}, {} needed".format(
             state.current.title, len(state.skip_votes), suffix, votes_needed))
 
-    @commands.command(aliases=["playing"])
+    @cog_ext.cog_slash()
     async def song(self, ctx):
         """Info about currently playing song"""
         state = self.states.get(ctx.guild.id)
@@ -260,98 +267,98 @@ class Music(commands.Cog):
         embed = self.song_embed(state)
         await ctx.send(embed=embed)
 
-    @commands.guild_only()
-    @commands.group(name="playlist")
-    async def playlist(self, ctx):
-        """Manage playlists"""
-        if ctx.invoked_subcommand is None:
-            await self.bot.send_cmd_help(ctx)
+    # @commands.guild_only()
+    # @commands.group(name="playlist")
+    # async def playlist(self, ctx):
+    #     """Manage playlists"""
+    #     if ctx.invoked_subcommand is None:
+    #         await self.bot.send_cmd_help(ctx)
 
-    @playlist.command(name="add")
-    async def playlist_add(self, ctx, name, url):
-        """Add a new playlist"""
-        guild = ctx.guild
-        if "playlist?list=" not in url.lower():
-            await ctx.send("Error, playlist URL is not a valid youtube URL")
-            return
-        doc = await self.bot.database.get(guild, self)
-        current_playlists = doc.get("playlists")
-        if current_playlists:
-            for pl in current_playlists:
-                if url == pl["url"]:
-                    return await ctx.send(
-                        f"Playlist already exists in this server with the name {pl['name']}."
-                    )
-                if name == pl["name"]:
-                    return await ctx.send("Playlist name already exists")
-        playlist = {
-            "name": name,
-            "url": url.replace("https://www.youtube.com/playlist?list=", "")
-        }
-        await self.bot.database.set(guild, {"playlists": playlist},
-                                    self,
-                                    operator="$push")
-        await ctx.send("Playlist created with name {0}".format(name) +
-                       " and playlist URL {0}".format(url))
+    # @playlist.command(name="add")
+    # async def playlist_add(self, ctx, name, url):
+    #     """Add a new playlist"""
+    #     guild = ctx.guild
+    #     if "playlist?list=" not in url.lower():
+    #         await ctx.send("Error, playlist URL is not a valid youtube URL")
+    #         return
+    #     doc = await self.bot.database.get(guild, self)
+    #     current_playlists = doc.get("playlists")
+    #     if current_playlists:
+    #         for pl in current_playlists:
+    #             if url == pl["url"]:
+    #                 return await ctx.send(
+    #                     f"Playlist already exists in this server with the name {pl['name']}."
+    #                 )
+    #             if name == pl["name"]:
+    #                 return await ctx.send("Playlist name already exists")
+    #     playlist = {
+    #         "name": name,
+    #         "url": url.replace("https://www.youtube.com/playlist?list=", "")
+    #     }
+    #     await self.bot.database.set(guild, {"playlists": playlist},
+    #                                 self,
+    #                                 operator="$push")
+    #     await ctx.send("Playlist created with name {0}".format(name) +
+    #                    " and playlist URL {0}".format(url))
 
-    @playlist.command(name="remove")
-    async def playlist_remove(self, ctx, name):
-        """Remove a playlist"""
-        guild = ctx.guild
-        doc = await self.bot.database.get(guild, self)
-        current_playlists = doc.get("playlists")
-        playlist = self.find_playlist(name, current_playlists)
-        if not playlist:
-            return await ctx.send("That playlist does not exist.")
-        await self.bot.database.set(guild, {"playlists": playlist},
-                                    self,
-                                    operator="$pull")
-        await ctx.send("Playlist has been removed!")
+    # @playlist.command(name="remove")
+    # async def playlist_remove(self, ctx, name):
+    #     """Remove a playlist"""
+    #     guild = ctx.guild
+    #     doc = await self.bot.database.get(guild, self)
+    #     current_playlists = doc.get("playlists")
+    #     playlist = self.find_playlist(name, current_playlists)
+    #     if not playlist:
+    #         return await ctx.send("That playlist does not exist.")
+    #     await self.bot.database.set(guild, {"playlists": playlist},
+    #                                 self,
+    #                                 operator="$pull")
+    #     await ctx.send("Playlist has been removed!")
 
-    @playlist.command(name="show")
-    async def playlist_show(self, ctx):
-        """Show all currently existing playlists."""
-        guild = ctx.guild
-        doc = await self.bot.database.get(guild, self)
-        current_playlists = doc.get("playlists")
-        if not current_playlists:
-            return await ctx.send("There are no playlists.")
-        playlist_names = []
-        for playlist in current_playlists:
-            playlist_names.append(playlist.get('name'))
-        pl = ", ".join(playlist_names)
-        await ctx.send("The current playlists are: {0}".format(pl))
+    # @playlist.command(name="show")
+    # async def playlist_show(self, ctx):
+    #     """Show all currently existing playlists."""
+    #     guild = ctx.guild
+    #     doc = await self.bot.database.get(guild, self)
+    #     current_playlists = doc.get("playlists")
+    #     if not current_playlists:
+    #         return await ctx.send("There are no playlists.")
+    #     playlist_names = []
+    #     for playlist in current_playlists:
+    #         playlist_names.append(playlist.get('name'))
+    #     pl = ", ".join(playlist_names)
+    #     await ctx.send("The current playlists are: {0}".format(pl))
 
-    @playlist.command(name="play")
-    async def playlist_play(self, ctx, name):
-        """Queue a playlist"""
-        guild = ctx.guild
-        if not name:
-            await self.bot.send_cmd_help(ctx)
-            return
-        doc = await self.bot.database.get(guild, self)
-        playlists = doc.get("playlists")
-        playlist = self.find_playlist(name, playlists)
-        await self.enqueue(
-            ctx, "https://www.youtube.com/playlist?list=" + playlist["url"])
+    # @playlist.command(name="play")
+    # async def playlist_play(self, ctx, name):
+    #     """Queue a playlist"""
+    #     guild = ctx.guild
+    #     if not name:
+    #         await self.bot.send_cmd_help(ctx)
+    #         return
+    #     doc = await self.bot.database.get(guild, self)
+    #     playlists = doc.get("playlists")
+    #     playlist = self.find_playlist(name, playlists)
+    #     await self.enqueue(
+    #         ctx, "https://www.youtube.com/playlist?list=" + playlist["url"])
 
-    @playlist.command(name="mix")
-    async def playlist_mix(self, ctx, name):
-        """Queue a playlist and shuffles it"""
-        guild = ctx.guild
-        doc = await self.bot.database.get(guild, self)
-        playlists = doc.get("playlists")
-        playlist = self.find_playlist(name, playlists)
-        await self.enqueue(ctx,
-                           "https://www.youtube.com/playlist?list=" +
-                           playlist["url"],
-                           shuffle=True)
+    # @playlist.command(name="mix")
+    # async def playlist_mix(self, ctx, name):
+    #     """Queue a playlist and shuffles it"""
+    #     guild = ctx.guild
+    #     doc = await self.bot.database.get(guild, self)
+    #     playlists = doc.get("playlists")
+    #     playlist = self.find_playlist(name, playlists)
+    #     await self.enqueue(ctx,
+    #                        "https://www.youtube.com/playlist?list=" +
+    #                        playlist["url"],
+    #                        shuffle=True)
 
-    def find_playlist(self, name, playlists):
-        for playlist in playlists:
-            if playlist["name"].lower() == name.lower():
-                return playlist
-        return None
+    # def find_playlist(self, name, playlists):
+    #     for playlist in playlists:
+    #         if playlist["name"].lower() == name.lower():
+    #             return playlist
+    #     return None
 
     async def get_state(self, ctx):
         guild = ctx.guild
