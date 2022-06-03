@@ -6,7 +6,6 @@ import sys
 import aiohttp
 import discord
 from discord.ext import commands
-from discord_slash import SlashCommand
 
 from cogs.utils import context
 
@@ -44,7 +43,9 @@ if SELFBOT:
 
 
 class Toothy(commands.AutoShardedBot):
+
     def __init__(self):
+
         async def prefix_callable(bot, message):
             prefix = await self.database.get_prefixes(message.guild)
             if not prefix:
@@ -53,13 +54,15 @@ class Toothy(commands.AutoShardedBot):
                 "<@!{.user.id}> ".format(self), self.user.mention + " "
             ]
 
-        super().__init__(command_prefix=prefix_callable,
-                         description=DESCRIPTION,
-                         pm_help=None if not SELFBOT else False,
-                         self_bot=SELFBOT,
-                         owner_id=OWNER_ID,
-                         case_insensitive=CASE_INSENSITIVE,
-                         intents=INTENTS)
+        super().__init__(
+            command_prefix=prefix_callable,
+            description=DESCRIPTION,
+            pm_help=None if not SELFBOT else False,
+            self_bot=SELFBOT,
+            owner_id=OWNER_ID,
+            case_insensitive=CASE_INSENSITIVE,
+            intents=INTENTS,
+        )
         self.database = MongoController(self, DB_SETTINGS)
         self.available = True
         self.global_prefixes = data["PREFIXES"]
@@ -68,15 +71,14 @@ class Toothy(commands.AutoShardedBot):
         self.session = aiohttp.ClientSession(loop=self.loop)
         self.avatar_file = None
         self.uptime = datetime.datetime.utcnow()
-        self.slash = SlashCommand(self,
-                                  sync_on_cog_reload=True,
-                                  debug_guild=DEBUG_GUILD)
+
+    async def setup_hook(self):
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             extensions = json.load(f)
         for name, state in extensions.items():
             if state:
                 try:
-                    self.load_extension(name)
+                    await self.load_extension(name)
                 except Exception as e:
                     print("{}: {}".format(e.__class__.__name__, str(e)))
                     print("Failed to load {}".format(name))
@@ -88,7 +90,6 @@ class Toothy(commands.AutoShardedBot):
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(extensions, indent=4, sort_keys=True))
         self.loop.create_task(self.disable_commands(global_cog))
-        self.loop.create_task(self.slash.sync_all_commands())
 
     async def on_ready(self):
         print("Toothy ready")
@@ -117,11 +118,6 @@ class Toothy(commands.AutoShardedBot):
             return
         if not self.available and user.id != self.owner_id:
             return
-        if await self.user_is_ignored(user):
-            return
-        if isinstance(message.channel, discord.abc.GuildChannel):
-            if await self.guild_is_ignored(message.guild):
-                return
         await self.process_commands(message)
 
     async def process_commands(self, message):
@@ -129,6 +125,22 @@ class Toothy(commands.AutoShardedBot):
         if not ctx.valid:
             return
         await self.invoke(ctx)
+        output = (
+            "This way of using the bot is deprecated and will be "
+            "disabled in the near future, as mandated by Discord."
+            "\nPlease use the bot using Slash Commands instead. Simply prefix "
+            "your command "
+            f"with **/** instead of {ctx.prefix}\n> **/**")
+        if ctx.guild:
+            can_use_commands = ctx.channel.permissions_for(
+                ctx.author).use_slash_commands
+            if not can_use_commands:
+                output += (
+                    "\nPlease ask an admin to enable "
+                    "the `Use Application Commands` permission "
+                    "in this channel! Until then, you will not be able to "
+                    "see the commands here, but you can use the bot in DMs")
+        await ctx.send(output)
 
     async def on_command_error(self, ctx, exc):
         if isinstance(exc, commands.NoPrivateMessage):
@@ -152,8 +164,10 @@ class Toothy(commands.AutoShardedBot):
             message = ("Something went wrong. If the issue persists, please "
                        "contact the author. ")
             await ctx.send(message)
-            log.exception("Exception in command " + ctx.command.qualified_name,
-                          exc_info=exc.original)
+            log.exception(
+                "Exception in command " + ctx.command.qualified_name,
+                exc_info=exc.original,
+            )
         elif isinstance(exc, commands.MissingPermissions):
             missing = [
                 p.replace("guild", "server").replace("_", " ").title()
@@ -200,10 +214,10 @@ class Toothy(commands.AutoShardedBot):
     def save_config(self):
         with open("settings/config.json", encoding="utf-8", mode="r") as f:
             data = json.load(f)
-        data["DESCRIPTION"] = DESCRIPTION,
+        data["DESCRIPTION"] = (DESCRIPTION, )
         data["PREFIXES"] = self.global_prefixes
         with open("settings/config.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(data, indent=4, sort_keys=True))
 
-    def run(self):
-        super().run(TOKEN, bot=not SELFBOT)
+    async def start(self):
+        super().start(TOKEN, bot=not SELFBOT)

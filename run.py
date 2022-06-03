@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import logging.handlers
 import os
@@ -25,10 +26,15 @@ def setup_logging():
     logger.addHandler(stderr_hdlr)
 
 
+async def main():
+    bot = Toothy()
+    print("Logging in to Discord")
+    async with bot:
+        await bot.start()
+
+
 if __name__ == '__main__':
     if not os.path.exists("logs"):
         os.makedirs("logs")
     setup_logging()
-    bot = Toothy()
-    print("Logging in to Discord")
-    bot.run()
+    asyncio.run(main())
