@@ -8,6 +8,8 @@ import discord
 import random
 from discord.ext import commands
 
+from toothy.toothy import DEBUG_GUILD
+
 log = logging.getLogger(__name__)
 
 STATUSES = {
@@ -40,8 +42,8 @@ class Global(commands.Cog):
         """Loads an extension"""
         extension = "cogs." + name.strip()
         try:
-            self.bot.load_extension(extension)
-        except Exception as e:
+            await self.bot.load_extension(extension)
+        except Exception:
             return await ctx.send("```py\n{}\n```".format(
                 traceback.format_exc()))
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
@@ -50,7 +52,6 @@ class Global(commands.Cog):
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(data, indent=4, sort_keys=True))
         await ctx.send("Extension loaded succesfully")
-        await self.bot.disable_commands(self)
 
     @commands.command(name="unload")
     async def unload_extension(self, ctx, *, name: str):
@@ -59,7 +60,7 @@ class Global(commands.Cog):
         if extension == "cogs.global":
             return await ctx.send("Can't unload global cog")
         try:
-            self.bot.unload_extension(extension)
+            await self.bot.unload_extension(extension)
         except Exception as e:
             return await ctx.send("```py\n{}\n```".format(
                 traceback.format_exc()))
@@ -75,12 +76,11 @@ class Global(commands.Cog):
         """Reloads an extension"""
         extension = "cogs." + name.strip()
         try:
-            self.bot.reload_extension(extension)
+            await self.bot.reload_extension(extension)
         except Exception as e:
             return await ctx.send("```py\n{}\n```".format(
                 traceback.format_exc()))
         await ctx.send("Extension reloaded succesfully")
-        await self.bot.disable_commands(self)
 
     @commands.command()
     async def doas(self, ctx, member: discord.Member, *, command):
@@ -89,6 +89,18 @@ class Global(commands.Cog):
         message.content = ctx.prefix + command
         message.author = member
         await self.bot.process_commands(message)
+
+    @commands.command()
+    async def sync(self, ctx, guild_only: bool = False):
+        """Sync command tree. TODO: Automatic!"""
+        print(self.bot.tree)
+        MY_GUILD = discord.Object(id=DEBUG_GUILD)
+        if guild_only:
+            self.bot.tree.copy_global_to(guild=MY_GUILD)
+            await self.bot.tree.sync(guild=MY_GUILD)
+        else:
+            await self.bot.tree.sync()
+        await ctx.send("Synced")
 
     @commands.group()
     async def presence(self, ctx):
@@ -106,7 +118,9 @@ class Global(commands.Cog):
             return
 
     @manager.command(name="interval")
-    async def presence_mgr_interval(self, ctx, interval: int,
+    async def presence_mgr_interval(self,
+                                    ctx,
+                                    interval: int,
                                     maximum: int = 0):
         """Interval at which game will be changed, in seconds
 
@@ -203,8 +217,8 @@ class Global(commands.Cog):
                 game = discord.Game(name=args[0])
             except IndexError:
                 return await self.bot.send_cmd_help(ctx)
-        await self.bot.change_presence(
-            activity=game, status=current_presence["status"])
+        await self.bot.change_presence(activity=game,
+                                       status=current_presence["status"])
         await ctx.send("Done.")
 
     @presence.command(name="status")
@@ -215,78 +229,9 @@ class Global(commands.Cog):
         if status not in STATUSES:
             await self.bot.send_cmd_help(ctx)
             return
-        await self.bot.change_presence(
-            status=STATUSES[status], activity=current_presence["game"])
+        await self.bot.change_presence(status=STATUSES[status],
+                                       activity=current_presence["game"])
         await ctx.send("Status changed.")
-
-    @commands.group()
-    async def blacklist(self, ctx):
-        """Blacklist management commands
-
-        Blacklisted users will be unable to issue commands"""
-        if ctx.invoked_subcommand is None:
-            await self.bot.send_cmd_help(ctx)
-
-    @blacklist.command(name="add")
-    async def blacklist_add(self, ctx, user: discord.Member):
-        """Globally blacklist user from the bot"""
-        if not await self.bot.user_is_ignored(user):
-            await self.bot.database.set_user(user, {"blacklisted": True})
-            await ctx.send("Added to blacklist")
-        else:
-            await ctx.send("User already on blacklist")
-
-    @blacklist.command(name="remove")
-    async def blacklist_remove(self, ctx, user: discord.Member):
-        """Remove user from the global blacklist"""
-        if await self.bot.user_is_ignored(user):
-            await self.bot.database.set_user(user, {"blacklisted": False})
-            await ctx.send("User unblacklisted")
-        else:
-            await ctx.send("User not on blacklist")
-
-    @commands.group(name="command")
-    async def cmd_disable(self, ctx):
-        """Disable/enable commands globally"""
-        if ctx.invoked_subcommand is None:
-            await self.bot.send_cmd_help(ctx)
-
-    @cmd_disable.command(name="disable")
-    async def cmd_disable_off(self, ctx, *, cmd):
-        """Globally disable a command"""
-        cmd = cmd.lower()
-        cmd_obj = self.bot.get_command(cmd)
-        if not cmd_obj:
-            return await ctx.send("Invalid command")
-        if not cmd_obj.enabled:
-            return await ctx.send("This command is already disabled")
-        await self.bot.database.set_cog_config(
-            self, {"disabled_commands": cmd}, operator="$push")
-        self.bot.disable_command(cmd_obj)
-        await ctx.send("`{}` disabled".format(cmd_obj.name))
-
-    @cmd_disable.command(name="enable")
-    async def cmd_disable_on(self, ctx, *, cmd):
-        """Globally enable a command"""
-        cmd = cmd.lower()
-        cmd_obj = self.bot.get_command(cmd)
-        if not cmd_obj:
-            return await ctx.send("Invalid command")
-        if cmd_obj.enabled:
-            return await ctx.send("This command is already enabled")
-        await self.bot.database.set_cog_config(
-            self, {"disabled_commands": cmd}, operator="$pull")
-        cmd_obj.enabled = True
-        cmd_obj.hidden = False
-        await ctx.send("`{}` enabled".format(cmd_obj.name))
-
-    @cmd_disable.command(name="list")
-    async def cmd_disable_list(self, ctx):
-        """List disabled commands"""
-        commands = "\n".join(await self.bot.get_disabled_commands(self))
-        if not commands:
-            return await ctx.send("There are currently no disabled commands")
-        await ctx.send("Disabled commands are:```\n{}\n```".format(commands))
 
     @commands.command()
     async def toggleprivileged(self, ctx, user: discord.User):
@@ -333,16 +278,16 @@ class Global(commands.Cog):
                             game = random.choice(games)
                         else:
                             try:
-                                game = games[self.
-                                             presence_manager_current_index]
+                                game = games[
+                                    self.presence_manager_current_index]
                                 self.presence_manager_current_index += 1
                             except IndexError:
                                 self.presence_manager_current_index = 0
                                 game = games[0]
                         activity = discord.Activity(
                             name=game.format(bot=self.bot), type=activity_type)
-                        await self.bot.change_presence(
-                            activity=activity, status=status)
+                        await self.bot.change_presence(activity=activity,
+                                                       status=status)
                     await asyncio.sleep(interval)
             except Exception as e:
                 log.exception(e)
@@ -350,7 +295,7 @@ class Global(commands.Cog):
                 continue
 
 
-def setup(bot):
+async def setup(bot):
     cog = Global(bot)
     loop = bot.loop
     loop.create_task(
@@ -368,4 +313,4 @@ def setup(bot):
                 "disabled_commands": []
             }))
     loop.create_task(cog.presence_manager())
-    bot.add_cog(cog)
+    await bot.add_cog(cog)

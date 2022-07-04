@@ -17,7 +17,6 @@ with open("settings/config.json", encoding="utf-8", mode="r") as f:
     data = json.load(f)
     TOKEN = data["TOKEN"]
     DESCRIPTION = data["DESCRIPTION"]
-    SELFBOT = data["SELFBOT"]
     OWNER_ID = data["OWNER_ID"]
     DB_SETTINGS = data["DATABASE"]
     CASE_INSENSITIVE = data["CASE_INSENSITIVE_COMMANDS"]
@@ -28,18 +27,6 @@ with open("settings/config.json", encoding="utf-8", mode="r") as f:
 if not TOKEN:
     print("Token not set in config.json")
     sys.exit(1)
-
-if SELFBOT and not OWNER_ID:
-    print("You must specify owner id in order to use Selfbot mode")
-    sys.exit(1)
-
-if SELFBOT:
-    print("By using selfbot mode, you put your account at risk of getting "
-          "banned. Use at your own risk. You have been warned.\n" * 3)
-    to_proceed = input('To proceed type "I understand"\n')
-    if to_proceed.lower() != "i understand":
-        print("Bot will now exit")
-        sys.exit(1)
 
 
 class Toothy(commands.AutoShardedBot):
@@ -57,8 +44,6 @@ class Toothy(commands.AutoShardedBot):
         super().__init__(
             command_prefix=prefix_callable,
             description=DESCRIPTION,
-            pm_help=None if not SELFBOT else False,
-            self_bot=SELFBOT,
             owner_id=OWNER_ID,
             case_insensitive=CASE_INSENSITIVE,
             intents=INTENTS,
@@ -68,11 +53,12 @@ class Toothy(commands.AutoShardedBot):
         self.global_prefixes = data["PREFIXES"]
         self.uptime = datetime.datetime.utcnow()
         self.color = discord.Color(COLOR)
-        self.session = aiohttp.ClientSession(loop=self.loop)
+        self.session = None
         self.avatar_file = None
         self.uptime = datetime.datetime.utcnow()
 
     async def setup_hook(self):
+        self.session = aiohttp.ClientSession(loop=self.loop)
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
             extensions = json.load(f)
         for name, state in extensions.items():
@@ -80,8 +66,7 @@ class Toothy(commands.AutoShardedBot):
                 try:
                     await self.load_extension(name)
                 except Exception as e:
-                    print("{}: {}".format(e.__class__.__name__, str(e)))
-                    print("Failed to load {}".format(name))
+                    log.exception("Failed to load {}".format(name), exc_info=e)
                     state = False
         global_cog = self.get_cog("Global")
         if not global_cog:
@@ -89,7 +74,6 @@ class Toothy(commands.AutoShardedBot):
             sys.exit(1)
         with open("settings/extensions.json", encoding="utf-8", mode="w") as f:
             f.write(json.dumps(extensions, indent=4, sort_keys=True))
-        self.loop.create_task(self.disable_commands(global_cog))
 
     async def on_ready(self):
         print("Toothy ready")
@@ -190,26 +174,13 @@ class Toothy(commands.AutoShardedBot):
         elif isinstance(exc, commands.CheckFailure):
             pass
 
-    async def user_is_ignored(self, user):
-        doc = await self.database.users.find_one({"_id": user.id},
-                                                 {"blacklisted": 1})
-        if not doc:
-            return False
-        return doc.get("blacklisted", False)
-
-    async def guild_is_ignored(self, guild):
-        doc = await self.database.guilds.find_one({"_id": guild.id},
-                                                  {"blacklisted": 1})
-        if not doc:
-            return False
-        return doc.get("blacklisted", False)
-
     async def send_cmd_help(self, ctx):  # lol
         return ctx.send_help(ctx.command)
 
     async def close(self):
         await super().close()
-        await self.session.close()
+        if self.session:
+            await self.session.close()
 
     def save_config(self):
         with open("settings/config.json", encoding="utf-8", mode="r") as f:
@@ -220,4 +191,4 @@ class Toothy(commands.AutoShardedBot):
             f.write(json.dumps(data, indent=4, sort_keys=True))
 
     async def start(self):
-        super().start(TOKEN, bot=not SELFBOT)
+        await super().start(TOKEN)
