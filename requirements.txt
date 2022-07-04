@@ -1,3 +1,2 @@
 discord.py
 motor >= 2.0
-discord-py-interactions

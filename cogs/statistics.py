@@ -5,11 +5,11 @@ from collections import Counter
 import discord
 from discord.ext import commands
 from discord.ext.commands.cooldowns import BucketType
+from discord_slash import SlashContext
 
 
 class Statistics(commands.Cog):
     """Bot statistics"""
-
     def __init__(self, bot):
         self.bot = bot
         self.counter = Counter()
@@ -31,12 +31,13 @@ class Statistics(commands.Cog):
                 description="Command usage statistics of {0}".format(
                     ctx.author),
                 color=self.bot.color)
-            count = await self.db.commands.count_documents({
-                "author":
-                ctx.author.id
-            })
-            data = await self.generate_embed(
-                ctx, data, cursor, count, rank=False)
+            count = await self.db.commands.count_documents(
+                {"author": ctx.author.id})
+            data = await self.generate_embed(ctx,
+                                             data,
+                                             cursor,
+                                             count,
+                                             rank=False)
             try:
                 await ctx.send(embed=data)
             except discord.Forbidden:
@@ -53,10 +54,8 @@ class Statistics(commands.Cog):
                 description="Command usage statistics of {0}".format(
                     ctx.guild),
                 color=self.bot.color)
-            count = await self.db.commands.count_documents({
-                "guild":
-                ctx.guild.id
-            })
+            count = await self.db.commands.count_documents(
+                {"guild": ctx.guild.id})
             data = await self.generate_embed(ctx, data, cursor, count)
             try:
                 await ctx.send(embed=data)
@@ -71,8 +70,8 @@ class Statistics(commands.Cog):
         Only available to server owner"""
         async with ctx.typing():
             cursor = self.db.commands.find()
-            data = discord.Embed(
-                description="Total command statistics", color=self.bot.color)
+            data = discord.Embed(description="Total command statistics",
+                                 color=self.bot.color)
             count = await self.db.commands.count_documents({})
             data = await self.generate_embed(ctx, data, cursor, count)
             try:
@@ -108,8 +107,9 @@ class Statistics(commands.Cog):
         total_amount = count
         ordered_commands = await self.get_commands_stats(cursor, 'command')
         percentages = self.calc_percentage(ordered_commands, total_amount)
-        data.add_field(
-            name="Total commands used", value=str(total_amount), inline=False)
+        data.add_field(name="Total commands used",
+                       value=str(total_amount),
+                       inline=False)
         output = self.generate_commands(ordered_commands)
         data.add_field(name="Most used commands", value=output, inline=False)
         output = self.generate_diagram(percentages)
@@ -118,8 +118,9 @@ class Statistics(commands.Cog):
             cursor = cursor.rewind()
             ranking = await self.get_commands_stats(cursor, 'author')
             output = await self.generate_ranking(ctx, ranking)
-            data.add_field(
-                name="Ranking", value="```{0}```".format(output), inline=False)
+            data.add_field(name="Ranking",
+                           value="```{0}```".format(output),
+                           inline=False)
         return data
 
     def generate_commands(self, ordered_commands):
@@ -216,6 +217,25 @@ class Statistics(commands.Cog):
             "message": ctx.message.id,
             "command": ctx.command.qualified_name,
             "timestamp": ctx.message.created_at
+        }
+        await self.db.commands.insert_one(doc)
+
+    @commands.Cog.listener()
+    async def on_slash_command(self, ctx: SlashContext):
+        self.counter["invoked_slash_commands"] += 1
+        guild = ctx.guild.id if ctx.guild else None
+        channel = ctx.channel.id if ctx.channel else None
+        message = ctx.message.id if ctx.message else None
+        parts = [ctx.name, ctx.subcommand_group, ctx.subcommand_name]
+        name = " ".join(filter(None, parts))
+        doc = {
+            "author": ctx.author.id,
+            "guild": guild,
+            "channel": channel,
+            "message": message,
+            "command": name,
+            "timestamp": datetime.datetime.utcnow(),
+            "type": "slash"
         }
         await self.db.commands.insert_one(doc)
 

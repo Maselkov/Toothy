@@ -5,7 +5,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 
 class MongoController:
+
     def __init__(self, bot, settings):
+
         def mongo_uri():
             credentials = settings["credentials"]
             uri = "mongodb://"
@@ -115,9 +117,7 @@ class MongoController:
         cog's embedded setting document"""
         if cog:
             settings = self.dot_notation(cog, settings)
-        await self.users.update_one({
-            "_id": user.id
-        }, {operator: settings},
+        await self.users.update_one({"_id": user.id}, {operator: settings},
                                     upsert=True)
 
     async def set_guild(self,
@@ -130,9 +130,7 @@ class MongoController:
         cog's embedded setting document"""
         if cog:
             settings = self.dot_notation(cog, settings)
-        await self.guilds.update_one({
-            "_id": guild.id
-        }, {operator: settings},
+        await self.guilds.update_one({"_id": guild.id}, {operator: settings},
                                      upsert=True)
 
     async def set_channel(self,
@@ -145,15 +143,13 @@ class MongoController:
         cog's embedded setting document"""
         if cog:
             settings = self.dot_notation(cog, settings)
-        await self.channels.update_one({
-            "_id": channel.id
-        }, {operator: settings},
+        await self.channels.update_one({"_id": channel.id},
+                                       {operator: settings},
                                        upsert=True)
 
     async def set_cog_config(self, cog, settings, *, operator="$set"):
-        await self.configs.update_one({
-            "cog_name": cog.__class__.__name__
-        }, {operator: settings})
+        await self.configs.update_one({"cog_name": cog.__class__.__name__},
+                                      {operator: settings})
 
     async def set(self, obj, settings: dict, cog=None, *, operator="set"):
         """Set channel/guild/user. Use dot notation in settings.
@@ -164,10 +160,8 @@ class MongoController:
             settings = self.dot_notation(cog, settings)
         if not operator.startswith("$"):
             operator = "$" + operator
-        return await coll.update_one({
-            "_id": obj.id
-        }, {operator: settings},
-                              upsert=True)
+        return await coll.update_one({"_id": obj.id}, {operator: settings},
+                                     upsert=True)
 
     async def set_flag(self, obj, **kwargs):
         for flag, value in kwargs.items():
@@ -182,7 +176,10 @@ class MongoController:
             return cursor.batch_size(batch_size)
         return cursor
 
-    def get_guilds_cursor(self, search: dict, cog=None, *,
+    def get_guilds_cursor(self,
+                          search: dict,
+                          cog=None,
+                          *,
                           batch_size: int = 0):
         if cog:
             search = self.dot_notation(cog, search)
