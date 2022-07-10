@@ -25,8 +25,8 @@ pip install -r requirements.txt
 1. Now copy the ***Bot Token*** from step 2 into the *TOKEN* field of `/settings/config.json` file.
 
 1. Invite your newly created bot to your Discord server by copying the following URL into a browser:  
-  ```
-  https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_APPLICATION_ID&permissions=939879488&scope=bot%20applications.commands
+  ```  
+  https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_APPLICATION_ID&permissions=939879488&scope=bot%20applications.commands  
   ```  
   (Replacing `YOUR_BOT_APPLICATION_ID` with the ***Application ID*** from step 2)
 
