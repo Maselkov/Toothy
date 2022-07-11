@@ -2,17 +2,20 @@ import asyncio
 import logging
 import logging.handlers
 import os
-
+from toothy.toothy import DEBUG
 from toothy.toothy import Toothy
 
 
 def setup_logging():
     formatter = logging.Formatter(
         '%(asctime)s:%(levelname)s:%(name)s: %(message)s')
+    logger = logging.getLogger("")
+    if DEBUG:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
     logging.getLogger("discord").setLevel(logging.INFO)
     logging.getLogger("discord.http").setLevel(logging.WARNING)
-    logger = logging.getLogger("")
-    logger.setLevel(logging.INFO)
     file_hdlr = logging.handlers.RotatingFileHandler(
         filename="logs/toothy.log",
         maxBytes=10 * 1024 * 1024,
@@ -21,7 +24,10 @@ def setup_logging():
     file_hdlr.setFormatter(formatter)
     stderr_hdlr = logging.StreamHandler()
     stderr_hdlr.setFormatter(formatter)
-    stderr_hdlr.setLevel(logging.ERROR)
+    if DEBUG:
+        stderr_hdlr.setLevel(logging.DEBUG)
+    else:
+        stderr_hdlr.setLevel(logging.ERROR)
     logger.addHandler(file_hdlr)
     logger.addHandler(stderr_hdlr)
 
