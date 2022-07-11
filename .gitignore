@@ -100,6 +100,10 @@ ENV/
 # mypy
 .mypy_cache/
 
-
 # VSC
 .vscode/
+
+# Settings
+settings/config.json
+settings/music-config.json
+settings/extensions.json
