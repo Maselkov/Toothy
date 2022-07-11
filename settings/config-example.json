@@ -1,6 +1,5 @@
 {
     "TOKEN": "",
-    "SELFBOT": false,
     "DATABASE": {
         "host": "localhost",
         "port": 27017,
