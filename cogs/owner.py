@@ -27,7 +27,7 @@ ACTIVITY_TYPES = {
 }
 
 
-class Global(commands.Cog):
+class Owner(commands.Cog):
     """Control the bot's global settings"""
 
     def __init__(self, bot):
@@ -61,7 +61,7 @@ class Global(commands.Cog):
             return await ctx.send("Can't unload global cog")
         try:
             await self.bot.unload_extension(extension)
-        except Exception as e:
+        except Exception:
             return await ctx.send("```py\n{}\n```".format(
                 traceback.format_exc()))
         with open("settings/extensions.json", encoding="utf-8", mode="r") as f:
@@ -77,7 +77,7 @@ class Global(commands.Cog):
         extension = "cogs." + name.strip()
         try:
             await self.bot.reload_extension(extension)
-        except Exception as e:
+        except Exception:
             return await ctx.send("```py\n{}\n```".format(
                 traceback.format_exc()))
         await ctx.send("Extension reloaded succesfully")
@@ -93,11 +93,10 @@ class Global(commands.Cog):
     @commands.command()
     async def sync(self, ctx, guild_only: bool = False):
         """Sync command tree. TODO: Automatic!"""
-        print(self.bot.tree)
-        MY_GUILD = discord.Object(id=DEBUG_GUILD)
         if guild_only:
-            self.bot.tree.copy_global_to(guild=MY_GUILD)
-            await self.bot.tree.sync(guild=MY_GUILD)
+            test_guild = discord.Object(id=self.bot.test_guild)
+            self.bot.tree.copy_global_to(guild=test_guild)
+            await self.bot.tree.sync(guild=test_guild)
         else:
             await self.bot.tree.sync()
         await ctx.send("Synced")
@@ -296,7 +295,7 @@ class Global(commands.Cog):
 
 
 async def setup(bot):
-    cog = Global(bot)
+    cog = Owner(bot)
     loop = bot.loop
     loop.create_task(
         bot.database.setup_cog(
@@ -309,8 +308,7 @@ async def setup(bot):
                     "enabled": False,
                     "randomize": False,
                     "games": []
-                },
-                "disabled_commands": []
+                }
             }))
     loop.create_task(cog.presence_manager())
     await bot.add_cog(cog)

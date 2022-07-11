@@ -1,6 +1,5 @@
 {
     "TOKEN": "",
-    "SELFBOT": false,
     "DATABASE": {
         "host": "localhost",
         "port": 27017,
@@ -23,7 +22,6 @@
     ],
     "CASE_INSENSITIVE_COMMANDS": true,
     "COLOR": "0xbdff3d",
-    "DEBUG_GUILD": null,
     "INTENTS": {
         "guilds": true,
         "members": true,
@@ -37,5 +35,7 @@
         "messages": true,
         "reactions": true,
         "typing": true
-    }
+    },
+    "TEST_GUILD": null,
+    "DEBUG": false
 }
