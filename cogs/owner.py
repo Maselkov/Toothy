@@ -2,13 +2,11 @@ import asyncio
 import copy
 import json
 import logging
+import random
 import traceback
 
 import discord
-import random
 from discord.ext import commands
-
-from toothy.toothy import DEBUG_GUILD
 
 log = logging.getLogger(__name__)
 
