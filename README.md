@@ -49,20 +49,7 @@ cp ./settings/config-example.json ./settings/config.json
   Help: [How to get Discord server ID](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID-)
 
 ### GW2Bot
-To use Toothy with [GW2Bot](https://github.com/Maselkov/GW2Bot), just clone the GW2Bot repo to the `cogs` directory and install dependencies:
-``` bash
-git clone https://github.com/Maselkov/GW2Bot.git ./cogs
-
-# Go to cogs directory
-cd cogs
-
-# Activate the Toothy virtual environment
-source ~/.venvs/toothyenv/bin/activate # POSIX
-source ~/.venvs/toothyenv/Scripts/activate # Windows
-
-# Install GW2Bot dependencies
-pip install -r requirements.txt
-```
+To use Toothy with [GW2Bot](https://github.com/Maselkov/GW2Bot), just follow the [GW2Bot setup instructions](https://github.com/Maselkov/GW2Bot/blob/master/README.md).
 
 ## Run
 ``` bash
