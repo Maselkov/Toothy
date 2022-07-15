@@ -1,2 +1,6 @@
 git+https://github.com/Rapptz/discord.py
 motor >= 2.0
+sponsorblock.py
+aiocache
+wavelink
+yt-dlp

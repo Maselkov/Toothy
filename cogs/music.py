@@ -1,538 +1,1177 @@
 import asyncio
+import collections
 import datetime
 import itertools
+import json
 import logging
-import math
+import os
 import random
+import time
+import urllib.parse
+from pathlib import Path
 
+import aiocache
+import async_timeout
 import discord
-import youtube_dl
-import youtube_dl.utils
-from discord.ext import commands
-from discord_slash import cog_ext
-from discord_slash.model import SlashCommandOptionType
+import sponsorblock
+import wavelink
+from discord import ButtonStyle, InteractionResponse, app_commands
+from discord.ext import commands, tasks
+from wavelink.ext import spotify
+from yt_dlp import YoutubeDL
+from yt_dlp.utils import YoutubeDLError
 
 log = logging.getLogger(__name__)
 
-ytdl_format_options = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0'
-}
+LYRICS_URL = "https://some-random-api.ml/lyrics?title={}"
+EMBED_COLORS = {"youtube": discord.Color(0xFF0000)}
 
-ffmpeg_options = {'before_options': '-nostdin', 'options': '-vn'}
+PROGRESS_BAR_PART_1 = "<:light:993605820304609280>"  # red line
+PROGRESS_BAR_PART_2 = "<:middle:993605813685977340>"  # red dot
+PROGRESS_BAR_PART_3 = "<:dark:993605816827531285>"  # grey line
 
-ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+PROGRESS_BAR_START = "<:start:993605815225299004>"  # start
+PROGRESS_BAR_END = "<:end:993605818115170379>"  # end
+BASE_PATH = Path.cwd() / "music"
+
+with open("settings/music-config.json", encoding="utf-8") as f:
+    CONFIG = json.load(f)
 
 
-class NoJoinError(Exception):
+async def download_track(track: wavelink.Track):
+    if not track.uri.startswith("https://www.youtube.com/watch"):
+        raise ValueError
+    save_path = BASE_PATH / "cache" / (track.identifier + ".ogg")
+    if save_path.exists():
+        return save_path
+
+    def wrapped():
+
+        def check(info, *, incomplete):
+            duration = info.get('duration')
+            if duration and duration > 1200:
+                return 'The video is too long'
+
+        ydl_opts = {
+            "quiet":
+            True,
+            "format":
+            "m4a/bestaudio/best",
+            # "postprocessors": [
+            #     'key': 'FFmpegExtractAudio',
+            #     'preferredcodec': 'vorbis',
+            #     "preferredquality": 10.0
+            # }],
+            "match_filter":
+            check,
+            "postprocessors": [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'vorbis',
+                "preferredquality": 10.0
+            }, {
+                'key': 'SponsorBlock'
+            }, {
+                'key': 'ModifyChapters',
+                'remove_sponsor_segments': ["music_offtopic"]
+            }],
+            "break_on_reject":
+            True,
+            "outtmpl":
+            str(save_path),
+            "ffmpeg_path":
+            CONFIG["ffmpeg_path"],
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            return ydl.download([track.uri])
+
+    code = await asyncio.get_event_loop().run_in_executor(None, wrapped)
+    if code == 0:
+        os.utime(save_path)
+        return save_path
+    else:
+        raise ValueError
+
+
+class LockedMenuPermissionsError:
     pass
 
 
-class VoiceState:
-    def __init__(self, ctx, volume, repeat=False):
-        self.current = None
-        self.player = None
-        self.guild = ctx.guild
-        self.voice = None
-        self.bot = ctx.bot
-        self.cog = ctx.cog
-        self.next = asyncio.Event()
-        self.queue = asyncio.Queue()
-        self.skip_votes = set()
-        self.volume = volume
-        self.repeat = repeat
-        self.time_started_playing = None
-        self.audio_player = self.bot.loop.create_task(self.audio_player_task())
-
-    def is_playing(self):
-        return bool(self.current)
-
-    def update_volume(self, value):
-        self.volume = value
-        if self.is_playing():
-            self.player.volume = self.volume
-
-    @property
-    def time_elapsed(self):
-        if not self.time_started_playing:
-            return 0
-        return (datetime.datetime.now() -
-                self.time_started_playing).total_seconds()
-
-    async def audio_player_task(self):
-        def next_song(_):
-            self.bot.loop.call_soon_threadsafe(self.next.set)
-
-        while True:
-            self.next.clear()
-            try:
-                self.current = await asyncio.wait_for(self.queue.get(),
-                                                      timeout=300,
-                                                      loop=self.bot.loop)
-            except asyncio.TimeoutError:
-                return await self.cog.stop_playing(self.guild)
-            if self.repeat:
-                await self.queue.put(self.current)
-            self.player = await YTDLSource.from_url(self.current.url)
-            self.player.volume = self.volume
-            self.time_started_playing = datetime.datetime.now()
-            self.current.voice_client.play(self.player, after=next_song)
-            await self.next.wait()
-            self.skip_votes.clear()
-            self.player.cleanup()
-            self.now_playing = None
+class UserNotInVoiceChannelError(Exception):
+    """The user is not in a voice channel."""
+    pass
 
 
-class VoiceEntry:
-    def __init__(self, ctx, url):
-        self.bot = ctx.bot
-        self.requester = ctx.author
-        self.url = url
-        self.voice_client = ctx.voice_client
-        self.title = None
-        self.description = None
-        self.upload_date = None
-        self.duration = None
-        self.uploader = None
-        self.uploader_url = None
-        self.video_url = None
-        self.view_count = None
-        self.likes = None
-        self.dislikes = None
-        self.thumbnail = None
+def round_to_base(x, prec=2, base=.05):
+    return round(base * round(float(x) / base), prec)
 
-    async def get_info(self):
-        data = await self.bot.loop.run_in_executor(
-            None, lambda: ytdl.extract_info(self.url, download=False))
-        if "entries" in data:
-            data = data["entries"][0]
-        self.title = data["title"]
-        self.description = data.get("description")
-        date = data.get("upload_date")
-        if date:
-            self.upload_date = datetime.datetime.strptime(
-                date, '%Y%m%d').strftime('%y-%m-%d')
+
+def user_in_voice_channel(interaction: discord.Interaction) -> bool:
+    return interaction.user.voice is not None
+
+
+def get_track_choice_name(track: wavelink.Track):
+    if hasattr(track, "duration"):
+        duration = track.duration
+    elif hasattr(track, "tracks"):
+        duration = sum(t.duration for t in track.tracks)
+    if hasattr(track, "title"):
+        title = track.title
+    elif hasattr(track, "name"):
+        title = track.name
+    minutes, seconds = divmod(int(duration), 60)
+    hours, minutes = divmod(minutes, 60)
+    h_str = "h"
+    m_str = "m"
+    if hours:
+        duration = "{}{} {}{} {}s".format(hours, h_str, minutes, m_str,
+                                          seconds)
+    elif minutes:
+        duration = "{}{} {}s".format(minutes, m_str, seconds)
+    else:
+        duration = "{}s".format(seconds)
+    if len(title) > 83:
+        title = title[:83] + "..."
+    return f"{title} - {duration}"
+
+
+def generate_progress_bar(percent, length=9):
+
+    def map(value, fromLow, fromHigh, toLow, toHigh):
+        return (value - fromLow) * (toHigh - toLow) / (fromHigh -
+                                                       fromLow) + toLow
+
+    val = int(map(percent, 0, 100, 0, length))
+    result_str = ''
+
+    result_str += PROGRESS_BAR_START
+
+    for i in range(0, val - 1):
+        result_str += PROGRESS_BAR_PART_1
+
+    result_str += PROGRESS_BAR_PART_2
+
+    for i in range(val, length - 1):
+        result_str += PROGRESS_BAR_PART_3
+
+    result_str += PROGRESS_BAR_END
+
+    return result_str
+
+
+# usage
+
+
+class SongInputModal(discord.ui.Modal, title='Search song'):
+
+    def __init__(self, controller, **kwargs):
+        super().__init__(**kwargs)
+        self.controller: MusicController = controller
+
+    query = discord.ui.TextInput(label='Track to search for')
+    platform = discord.ui.Select(placeholder='Platform',
+                                 options=[
+                                     discord.SelectOption(value='youtube',
+                                                          label='YouTube'),
+                                     discord.SelectOption(value='soundcloud',
+                                                          label='SoundCloud'),
+                                     discord.SelectOption(value='spotify',
+                                                          label='Spotify')
+                                 ])
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # await interaction.response.send_message(f'Thanks for your response',
+        #                                         ephemeral=True)
+        if self.platform.values[0] != 'youtube':
+            return await interaction.response.send_message(
+                "Sorry, only YouTube supported here for now. Use "
+                "the / commands for other platforms. TODO")
+        await interaction.response.defer()
+        results = await wavelink.YouTubeTrack.search(self.query.value)
+        if not results:
+            return await interaction.followup.send(
+                "No results found for `{}`".format(self.query.value))
+        if not isinstance(results, wavelink.YouTubePlaylist):
+            results = results[0]
+        await self.controller.cog.add_song_via_command(interaction, results)
+
+
+class MusicControllerView(discord.ui.View):
+
+    def __init__(self, guild: discord.Guild, controller):
+        super().__init__(timeout=1200.0)
+        self.guild = guild
+        self.controller: MusicController = controller
+
+    async def on_error(self, interaction: discord.Interaction,
+                       error: Exception, item) -> None:
+        message = "An unknown error occured"
+        if isinstance(error, UserNotInVoiceChannelError):
+            message = "You're not in the voice channel."
+        if isinstance(error, LockedMenuPermissionsError):
+            message = ("The player is currently locked. Only moderators "
+                       "and the DJ can use it.")
+        if not interaction.response.is_done():
+            await interaction.response.send_message(message, ephemeral=True)
         else:
-            self.upload_date = None
-        self.duration = data.get("duration", 0)
-        self.uploader = data["uploader"]
-        self.uploader_url = data.get("uploader_url")
-        self.video_url = data["webpage_url"]
-        self.view_count = data.get("view_count")
-        self.likes = data.get("like_count")
-        self.dislikes = data.get("dislike_count")
-        self.thumbnail = data["thumbnail"]
+            await interaction.followup.send(message)
+        log.exception("Error in player", exc_info=error)
+
+    async def interaction_check(self,
+                                interaction: discord.Interaction) -> bool:
+        if not user_in_voice_channel(interaction):
+            raise UserNotInVoiceChannelError
+        player = self.guild.voice_client
+        if interaction.user.voice.channel != player.channel:
+            raise UserNotInVoiceChannelError
+        if self.controller.locked:
+            if interaction.user != player.dj:
+                if not player.channel.permissions_for(
+                        interaction.user).mute_members:
+                    raise LockedMenuPermissionsError
+        return True
+
+    def embed(self):
+        guild: discord.Guild = self.controller.guild
+        player = guild.voice_client
+        track = player.source
+        if not track:
+            return discord.Embed(title='No track playing',
+                                 color=discord.Color.red())
+        embed = discord.Embed(title=f'Now Playing: {track.title}')
+        embed.color = EMBED_COLORS.get("weh", discord.Color.red())
+        if hasattr(track, 'thumbnail'):
+            embed.set_thumbnail(url=track.thumbnail)
+        if not self.controller.shuffle:
+            upcoming = self.controller.queue[:5]
+            fmt = '\n'.join(f'**`{str(song)}`**' for song in upcoming)
+            if fmt:
+                embed.add_field(name='Upcoming', value=fmt, inline=False)
+
+    #    end_time = self.controller.song_start_time + track.duration
+        runtime = time.time() - self.controller.song_start_time
+        percentage = int(runtime / track.duration * 100)
+        duration_bar = generate_progress_bar(percentage, length=6)
+        start_time = time.time() - player.position
+        end_time = start_time + track.duration
+        start_timestamp = f"<t:{int(start_time)}:R>"
+        end_timestamp = f"<t:{int(end_time)}:R>"
+        duration_bar = f"{start_timestamp} {duration_bar} {end_timestamp}"
+        if player.is_paused():
+            embed.add_field(name='Progress', value='Paused', inline=False)
+        else:
+            embed.add_field(name='Progress', value=duration_bar, inline=False)
+        if self.controller.locked:
+            embed.add_field(name='Locked',
+                            value="Only moderator and DJ can "
+                            "control the player. Click the padlock button to "
+                            "disengage.",
+                            inline=False)
+        embed.set_footer(text=f"Volume: {int(self.controller.volume*100)}%")
+        embed.set_author(name="Requested by " +
+                         track.info["requester"].display_name,
+                         icon_url=track.info["requester"].display_avatar.url)
+        embed.url = track.uri
+        return embed
+
+    @discord.ui.button(emoji="⏪", custom_id="prev", row=1)
+    async def previous(self, interaction: discord.Interaction,
+                       button: discord.ui.Button):
+        try:
+            await self.controller.previous(response=interaction.response)
+        except Exception:
+            return await interaction.response.send_message("No previous song",
+                                                           ephemeral=True)
+
+    @discord.ui.button(emoji="⬅️", custom_id="seek_back", row=2)
+    async def seek_back(self, interaction: discord.Interaction,
+                        button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        track = player.source
+        new_position = max(min(player.position - 10, track.duration), 0)
+        await player.seek(int(new_position * 1000))
+        self.controller.song_start_time -= player.position - new_position
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="⏸️", custom_id="pause_resume", row=1)
+    async def pause(self, interaction: discord.Interaction,
+                    button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        if player.is_paused():
+            await player.resume()
+        else:
+            await player.pause()
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="➡️", custom_id="seek_forward", row=2)
+    async def forward(self, interaction: discord.Interaction,
+                      button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        track = player.source
+        new_position = max(min(player.position + 10, track.duration), 0)
+        await player.seek(int(new_position * 1000))
+        self.controller.song_start_time += new_position - player.position
+        self.controller.response = None
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="⏩", custom_id="next", row=1)
+    async def next(self, interaction: discord.Interaction,
+                   button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        self.controller.response = interaction.response
+        await player.stop()
+
+    #    await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="🔈", custom_id="voldown", row=3)
+    async def voldown(self, interaction: discord.Interaction,
+                      button: discord.ui.Button):
+        if self.controller.volume > 0.05:
+            new_volume = round_to_base(self.controller.volume - 0.05,
+                                       base=0.05)
+        else:
+            new_volume = self.controller.volume - 0.01
+        await self.controller.adjust_volume(new_volume)
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="🔊", custom_id="volup", row=3)
+    async def volup(self, interaction: discord.Interaction,
+                    button: discord.ui.Button):
+        if self.controller.volume >= 0.05:
+            new_volume = round_to_base(self.controller.volume + 0.05,
+                                       base=0.05)
+        else:
+            new_volume = self.controller.volume + 0.01
+        await self.controller.adjust_volume(new_volume)
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="⏹️",
+                       custom_id="stop",
+                       style=discord.ButtonStyle.red,
+                       row=1)
+    async def stop(self, interaction: discord.Interaction,
+                   button: discord.ui.Button):
+        new_volume = self.controller.volume + 0.05
+        await self.controller.adjust_volume(new_volume)
+        await interaction.response.send_message(
+            f"Playback stopped by {interaction.user.mention}...",
+            ephemeral=True)
+        await self.controller.stop()
+        self.stop()
+
+    @discord.ui.button(emoji="🔀",
+                       custom_id="shuffle",
+                       style=discord.ButtonStyle.gray,
+                       row=3)
+    async def shuffle(self, interaction: discord.Interaction,
+                      button: discord.ui.Button):
+        self.controller.shuffle = not self.controller.shuffle
+        await self.controller.bot.database.set(
+            self.guild, {"shuffle": self.controller.shuffle},
+            self.controller.cog)
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="🔁",
+                       custom_id="repeat",
+                       style=discord.ButtonStyle.gray,
+                       row=3)
+    async def repeat(self, interaction: discord.Interaction,
+                     button: discord.ui.Button):
+        self.controller.repeat = not self.controller.repeat
+        await self.controller.bot.database.set(
+            self.guild, {"repeat": self.controller.repeat},
+            self.controller.cog)
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(emoji="🔓", custom_id="lock", row=4)
+    async def lock(self, interaction: discord.Interaction,
+                   button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        if interaction.user != player.dj:
+            if not player.channel.permissions_for(
+                    interaction.user).mute_members:
+                return await interaction.response.send_message(
+                    "Only the DJ and moderators can use this button.",
+                    ephemeral=True)
+        self.controller.locked = not self.controller.locked
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(label="Add track...", emoji="🔎", row=4)
+    async def add(self, interaction: discord.Interaction,
+                  button: discord.ui.Button):
+        modal = SongInputModal(self.controller)
+        await interaction.response.send_modal(modal)
+        await self.controller.update_menu(response=interaction.response)
+
+    @discord.ui.button(label="Lyrics...", emoji="📃", row=4)
+    async def lyrics(self, interaction: discord.Interaction,
+                     button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        track = player.source
+        lyrics = await self.controller.cog.get_lyrics(track)
+        if lyrics:
+            embed = discord.Embed(title=lyrics["title"])
+            embed.set_author(name=lyrics["author"])
+            embed.url = lyrics["links"]["genius"]
+            embed.description = lyrics["lyrics"][:1024]
+            await interaction.response.send_message(embed=embed,
+                                                    ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                'Unable to find lyrics for this song', ephemeral=True)
+
+    @discord.ui.button(label="Download track",
+                       emoji="⏬",
+                       row=4,
+                       custom_id="download")
+    async def download(self, interaction: discord.Interaction,
+                       button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        track = player.source
+        try:
+            pass
+        except ValueError:
+            return await interaction.response.send_message(
+                'This track is not from YouTube!', ephemeral=True)
+        if track.identifier in self.controller.cog.download_tasks:
+            return await interaction.response.send_message(
+                # TODO add progress bar here
+                "This track is currently being downloaded. Please wait!",
+                ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            task = download_track(track)
+            self.controller.cog.download_tasks[track.identifier] = task
+            path = await asyncio.wait_for(task, timeout=60)
+            del self.controller.cog.download_tasks[track.identifier]
+        except YoutubeDLError as e:
+            await interaction.followup.send(
+                "The downloader encountered an error. Please try again later.",
+                ephemeral=True)
+            if track.identifier in self.controller.cog.download_tasks:
+                del self.controller.cog.download_tasks[track.identifier]
+            log.exception("Error while downloading track:", exc_info=e)
+            return
+        except ValueError:
+            return await interaction.followup.send('Unable to download track',
+                                                   ephemeral=True)
+        except asyncio.TimeoutError:
+            return await interaction.followup.send('Download timed out',
+                                                   ephemeral=True)
+        file = discord.File(path, filename=track.title + '.ogg')
+        await interaction.followup.send("Your download is here.",
+                                        file=file,
+                                        ephemeral=True)
+
+    # @discord.ui.button(labvel="Equalizer",
+    #                    emoji="🔈",
+    #                    custom_id="equalizer",
+    #                    style=discord.ButtonStyle.gray,
+    #                    row=3)
+    async def equalizer(self, interaction: discord.Interaction,
+                        button: discord.ui.Button):
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+        self.controller.equalizer_on = not self.controller.equalizer_on
+        await self.controller.bot.database.set(
+            self.guild, {"equalizer": self.controller.equalizer_on},
+            self.controller.cog)
+        await self.controller.update_menu(response=interaction.response)
+        if self.controller.equalizer_on:
+            filter = wavelink.filters.Equalizer.flat()
+            await player.set_filter(filter)
+        else:
+            await player.set_filter(wavelink.filters.Filter())
+        await self.controller.update_menu(response=interaction.response)
 
 
-class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.1):
-        super().__init__(source, volume)
+class SongQueue(asyncio.Queue):
 
-        self.data = data
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            return list(
+                itertools.islice(self._queue, item.start, item.stop,
+                                 item.step))
+        else:
+            return self._queue[item]
 
-        self.title = data.get('title')
-        self.url = data.get('url')
+    def __iter__(self):
+        return self._queue.__iter__()
 
-    @classmethod
-    async def from_url(cls, url, *, loop=None):
-        loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(
-            None, lambda: ytdl.extract_info(url, download=False))
-        if 'entries' in data:
-            data = data['entries'][0]
-        filename = data["url"]
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options),
-                   data=data)
+    def __len__(self):
+        return self.qsize()
+
+    def clear(self):
+        self._queue.clear()
+
+    def shuffle(self):
+        random.shuffle(self._queue)
+
+    def remove(self, index: int):
+        del self._queue[index]
+
+    def _insert(self, index: int, item) -> None:
+        self._queue.insert(index, item)
+
+    def put_at_index(self, index: int, item) -> None:
+        """Put the given item into the queue at the specified index."""
+        if self.is_full:
+            raise asyncio.QueueFull(
+                f"Queue max_size of {self.max_size} has been reached.")
+
+        return self._insert(index, item)
+
+    def appendleft(self, x):
+        self._queue.appendleft(x)
+        self._unfinished_tasks += 1
+        self._finished.clear()
+        self._wakeup_next(self._getters)
+
+    def extend(self, iterable) -> None:
+        for item in iterable:
+            self.put_nowait(item)
+
+
+class Player(wavelink.Player):
+
+    def __init__(self, dj: discord.Member):
+        super().__init__()
+        self.dj = dj
+
+
+class MusicController:
+
+    def __init__(self, bot, cog, guild: discord.Guild):
+        self.bot = bot
+        self.cog: Music = cog
+        self.guild = guild
+        self.channel = None
+        self.previous_songs = collections.deque(maxlen=100)
+        self.next = asyncio.Event()
+        self.added = asyncio.Event()
+        self.queue = SongQueue(maxsize=1000)
+        self.song_start_time = None
+        self.volume = 0.15
+        self.now_playing = None
+        self.menu_message = None
+        self.add_to_previous = True
+        self.shuffle = False
+        self.response: discord.InteractionResponse = None
+        self.equalizer_on = False
+        self.repeat = False
+        self.locked = False
+        self.bot.loop.create_task(self.controller_loop())
+
+    async def adjust_volume(self, volume: float):
+        volume = round(volume, 2)
+        vol = max(min(volume, 5), 0.01)
+        self.volume = vol
+        await self.bot.database.set(self.guild, {"volume": vol}, self.cog)
+        player = self.guild.voice_client
+        if player:
+            await player.set_volume(vol)
+        return True
+
+    async def stop(self):
+        player: Player = self.guild.voice_client
+        if player and player.is_connected():
+            await player.disconnect()
+        del self.cog.controllers[self.guild.id]
+        if self.menu_message:
+            await self.menu_message.delete()
+
+    async def update_menu(self, *, response: InteractionResponse = None):
+        player = self.guild.voice_client
+        if not player and not len(self.queue) or not len(
+                self.queue) and not player.source:
+            embed = discord.Embed(title="Nothing currently playing. "
+                                  "Disconnect in... <relative time stamp>")
+            view = None
+        else:
+            view = MusicControllerView(self.guild, self)
+            for item in view.children:
+                if item.custom_id == 'next':
+                    item.disabled = len(self.queue) == 0
+                elif item.custom_id == "voldown":
+                    item.disabled = self.volume == 0
+                elif item.custom_id == "volup":
+                    item.disabled = self.volume > 1
+                elif item.custom_id == "shuffle":
+                    if self.shuffle:
+                        item.style = discord.ButtonStyle.green
+                elif item.custom_id == "pause_resume":
+                    if player.is_paused():
+                        item.emoji = "▶️"
+                        item.style = ButtonStyle.success
+                    else:
+                        item.emoji = "⏸️"
+                        item.style = ButtonStyle.danger
+                elif item.custom_id == "equalizer":
+                    if self.equalizer_on:
+                        item.style = discord.ButtonStyle.green
+                    else:
+                        item.style = discord.ButtonStyle.gray
+                elif item.custom_id == "repeat":
+                    if self.repeat:
+                        item.style = discord.ButtonStyle.green
+                    else:
+                        item.style = discord.ButtonStyle.gray
+                elif item.custom_id == "lock":
+                    if self.locked:
+                        item.style = discord.ButtonStyle.danger
+                        item.emoji = "🔒"
+                    else:
+                        item.style = discord.ButtonStyle.gray
+                        item.emoji = "🔓"
+            embed = view.embed()
+        if self.menu_message:
+            if response and not response.is_done():
+                await response.edit_message(embed=embed, view=view)
+            else:
+                await self.menu_message.edit(embed=embed, view=view)
+        else:
+            channel = self.guild.voice_client.channel
+            self.menu_message = await channel.send(embed=embed, view=view)
+
+    async def previous(self, *, response: InteractionResponse = None):
+        player: Player = self.guild.voice_client
+        runtime = time.time() - self.song_start_time
+        if not self.previous_songs or (player.is_playing() and runtime > 8):
+            await player.seek(0)
+            if player.is_paused():
+                await player.resume()
+            self.song_start_time = time.time()
+            await self.update_menu(response=response)
+            self.response = None
+            return
+        song = self.previous_songs.pop()
+        if not song:
+            raise Exception('No song to play')
+        if player.source:
+            self.queue.appendleft(player.source)
+
+        self.queue.appendleft(song)
+        if player.is_playing():
+            self.add_to_previous = False
+            if response:
+                self.response = response
+            await player.stop()
+
+    async def controller_loop(self):
+        try:
+            await self.bot.wait_until_ready()
+            doc = await self.bot.database.get(self.guild, self.cog)
+            self.shuffle = doc.get('shuffle', False)
+            self.equalizer_on = doc.get('equalizer', False)
+            self.repeat = doc.get('repeat', False)
+            player: Player = self.guild.voice_client
+            # if self.equalizer_on:
+            #     filter = wavelink.filters.Equalizer.flat()
+            #     await player.set_filter(
+            #         wavelink.filters.Filter(wavelink.filters.Equalizer.flat()))
+            # else:
+            #     await player.set_filter(wavelink.filters.Filter())
+            while True:
+                try:
+                    self.add_to_previous = True
+                    self.next.clear()
+                    self.added.clear()
+                    async with async_timeout.timeout(30):
+                        song = await self.queue.get()
+                    await player.play(song)
+                    await self.next.wait()
+                    if self.add_to_previous:
+                        self.previous_songs.append(song)
+                        if self.shuffle:
+                            self.queue.shuffle()
+                    self.added.set()
+                except (asyncio.exceptions.CancelledError,
+                        asyncio.exceptions.TimeoutError) as e:
+                    log.error("Error in inner loop", exc_info=e)
+                    await self.stop()
+                    break
+        except Exception as e:
+            log.error("Error in outer loop", exc_info=e)
 
 
 class Music(commands.Cog):
-    def __init__(self, bot):
+
+    def __init__(self, bot: commands.AutoShardedBot):
         self.bot = bot
-        self.states = {}
+        self.controllers = {}
+        self.searches_collection = self.bot.database.db.searches
+        self.sb = sponsorblock.Client()
+        self.delete_old_downloads.start()
+        self.download_tasks = {}
+        self.ffmpeg_location = "ffmpeg"
 
-    def __unload(self):
-        for state in self.states.values():
-            self.bot.loop.create_task(self.stop_playing(state.guild))
+    async def cog_load(self):
+        spotify_client = None
+        if CONFIG["spotify"]["client_id"] and CONFIG["spotify"][
+                "client_secret"]:
+            spotify_client = spotify.SpotifyClient(**CONFIG["spotify"])
+        for node in CONFIG["nodes"]:
+            if spotify_client:
+                node["spotify_client"] = spotify_client
+            await wavelink.NodePool.create_node(bot=self.bot, **node)
 
-    @cog_ext.cog_slash(options=[{
-        "name": "url",
-        "description": "URL or search term",
-        "type": SlashCommandOptionType.STRING,
-        "required": True
-    }])
-    async def play(self, ctx, url: str):
-        """Play a song. Can be YouTube or many different sites"""
-        await self.enqueue(ctx, url)
+    async def cog_unload(self):
+        self.delete_old_downloads.cancel()
+        for voice_state in self.bot.voice_clients:
+            await voice_state.disconnect(force=True)
 
-    @cog_ext.cog_slash(name="queue")
-    async def show_queue(self, ctx):
-        """Show the current song queue"""
-        if not self.is_connected(ctx):
-            return await ctx.send("I am not currently playing anything")
-        state = await self.get_state(ctx)
-        if not state.is_playing():
-            return await ctx.send("Not playing")
-        await ctx.send(embed=self.queue_embed(state))
+    @commands.Cog.listener()
+    async def on_wavelink_node_ready(self, node: wavelink.Node):
+        print(f'Node: <{node.identifier}> is ready!')
 
-    @cog_ext.cog_slash(options=[{
-        "name": "volume",
-        "description": "Value between 0 and 100",
-        "type": SlashCommandOptionType.INTEGER,
-        "required": True
-    }])
-    async def volume(self, ctx, volume: int):
-        """Changes the player's volume"""
-        if not 0 <= volume <= 100:
-            return await ctx.send("Value must be between 0 and 100")
-        guild = ctx.guild
-        volume = volume / 100
-        await self.bot.database.set(guild, {"volume": volume}, self)
-        if guild.id in self.states:
-            self.states[guild.id].update_volume(volume)
-        await ctx.send("Volume is now {:.0%}".format(volume))
+    async def get_skip_segments(self, url: str):
 
-    @cog_ext.cog_slash()
-    async def repeat(self, ctx):
-        """Toggle repeat mode"""
-        guild = ctx.guild
-        doc = await self.bot.database.get(guild, self)
-        repeat = not doc.get("repeat", False)
-        await self.bot.database.set(guild, {"repeat": repeat}, self)
-        if guild.id in self.states:
-            self.states[guild.id].repeat = repeat
-        if repeat:
-            await ctx.send("Repeat is now enabled")
-        else:
-            await ctx.send("Repeat is now disabled")
+        def proxy_pass(url):
+            return self.sb.get_skip_segments(url)
 
-    @cog_ext.cog_slash()
-    async def stop(self, ctx):
-        """Stops and disconnects the bot from voice"""
-        if not self.is_connected(ctx):
-            return await ctx.send("I am not connected to a voice channel.")
-        vc = ctx.me.voice.channel
-        if not ctx.author.voice or not ctx.author.voice.channel == vc:
-            return await ctx.send("You're not connected to my voice channel.")
-        if len(vc.members) == 2 or vc.permissions_for(ctx.author).move_members:
-            await ctx.send("Stopping playback...")
-            return await self.stop_playing(ctx.guild)
-        return await ctx.send(
-            "There are other people in the channel, vote to skip instead")
+        return await self.bot.loop.run_in_executor(None, proxy_pass, url)
 
-    @cog_ext.cog_slash()
-    async def skip(self, ctx):
-        """Skip the current song"""
-        if not self.is_connected(ctx):
-            return await ctx.send("Not connected to a voice channel.")
-        state = await self.get_state(ctx)
-        if not state.is_playing():
-            return await ctx.send("I am not currently playing anything.")
-        user = ctx.author
-        if not user.voice or not user.voice.channel == ctx.me.voice.channel:
-            return await ctx.send("You're not connected to voice.")
-        if user.permissions_in(ctx.me.voice.channel).mute_members:
-            await ctx.send("Force skipping.")
-            return ctx.voice_client.stop()
-        if user.id in state.skip_votes:
-            return await ctx.send(
-                "{.mention}, you've already voted.".format(user))
-        state.skip_votes.add(user.id)
-        total_skip_votes = len(state.skip_votes)
-        voice_members = len(ctx.me.voice.channel.members) - 1
-        votes_needed = math.ceil(voice_members / 2)
-        if voice_members % 2 == 0:
-            votes_needed += 1
-        if total_skip_votes >= votes_needed:
-            await ctx.send("Vote skip passed!")
-            return ctx.voice_client.stop()
-        suffix = "s" if len(state.skip_votes) > 1 else ""
-        await ctx.send("Voted to skip {}.\n{} vote{}, {} needed".format(
-            state.current.title, len(state.skip_votes), suffix, votes_needed))
-
-    @cog_ext.cog_slash()
-    async def song(self, ctx):
-        """Info about currently playing song"""
-        state = self.states.get(ctx.guild.id)
-        if not state or not state.current:
-            return await ctx.send("Not playing")
-        embed = self.song_embed(state)
-        await ctx.send(embed=embed)
-
-    # @commands.guild_only()
-    # @commands.group(name="playlist")
-    # async def playlist(self, ctx):
-    #     """Manage playlists"""
-    #     if ctx.invoked_subcommand is None:
-    #         await self.bot.send_cmd_help(ctx)
-
-    # @playlist.command(name="add")
-    # async def playlist_add(self, ctx, name, url):
-    #     """Add a new playlist"""
-    #     guild = ctx.guild
-    #     if "playlist?list=" not in url.lower():
-    #         await ctx.send("Error, playlist URL is not a valid youtube URL")
-    #         return
-    #     doc = await self.bot.database.get(guild, self)
-    #     current_playlists = doc.get("playlists")
-    #     if current_playlists:
-    #         for pl in current_playlists:
-    #             if url == pl["url"]:
-    #                 return await ctx.send(
-    #                     f"Playlist already exists in this server with the name {pl['name']}."
-    #                 )
-    #             if name == pl["name"]:
-    #                 return await ctx.send("Playlist name already exists")
-    #     playlist = {
-    #         "name": name,
-    #         "url": url.replace("https://www.youtube.com/playlist?list=", "")
-    #     }
-    #     await self.bot.database.set(guild, {"playlists": playlist},
-    #                                 self,
-    #                                 operator="$push")
-    #     await ctx.send("Playlist created with name {0}".format(name) +
-    #                    " and playlist URL {0}".format(url))
-
-    # @playlist.command(name="remove")
-    # async def playlist_remove(self, ctx, name):
-    #     """Remove a playlist"""
-    #     guild = ctx.guild
-    #     doc = await self.bot.database.get(guild, self)
-    #     current_playlists = doc.get("playlists")
-    #     playlist = self.find_playlist(name, current_playlists)
-    #     if not playlist:
-    #         return await ctx.send("That playlist does not exist.")
-    #     await self.bot.database.set(guild, {"playlists": playlist},
-    #                                 self,
-    #                                 operator="$pull")
-    #     await ctx.send("Playlist has been removed!")
-
-    # @playlist.command(name="show")
-    # async def playlist_show(self, ctx):
-    #     """Show all currently existing playlists."""
-    #     guild = ctx.guild
-    #     doc = await self.bot.database.get(guild, self)
-    #     current_playlists = doc.get("playlists")
-    #     if not current_playlists:
-    #         return await ctx.send("There are no playlists.")
-    #     playlist_names = []
-    #     for playlist in current_playlists:
-    #         playlist_names.append(playlist.get('name'))
-    #     pl = ", ".join(playlist_names)
-    #     await ctx.send("The current playlists are: {0}".format(pl))
-
-    # @playlist.command(name="play")
-    # async def playlist_play(self, ctx, name):
-    #     """Queue a playlist"""
-    #     guild = ctx.guild
-    #     if not name:
-    #         await self.bot.send_cmd_help(ctx)
-    #         return
-    #     doc = await self.bot.database.get(guild, self)
-    #     playlists = doc.get("playlists")
-    #     playlist = self.find_playlist(name, playlists)
-    #     await self.enqueue(
-    #         ctx, "https://www.youtube.com/playlist?list=" + playlist["url"])
-
-    # @playlist.command(name="mix")
-    # async def playlist_mix(self, ctx, name):
-    #     """Queue a playlist and shuffles it"""
-    #     guild = ctx.guild
-    #     doc = await self.bot.database.get(guild, self)
-    #     playlists = doc.get("playlists")
-    #     playlist = self.find_playlist(name, playlists)
-    #     await self.enqueue(ctx,
-    #                        "https://www.youtube.com/playlist?list=" +
-    #                        playlist["url"],
-    #                        shuffle=True)
-
-    # def find_playlist(self, name, playlists):
-    #     for playlist in playlists:
-    #         if playlist["name"].lower() == name.lower():
-    #             return playlist
-    #     return None
-
-    async def get_state(self, ctx):
-        guild = ctx.guild
-        state = self.states.get(guild.id)
-        if not state:
-            doc = await self.bot.database.get(guild, self)
-            volume = doc.get("volume", 1)
-            repeat = doc.get("repeat", False)
-            state = VoiceState(ctx, volume, repeat)
-            self.states[guild.id] = state
-        return state
-
-    async def enqueue(self, ctx, url, *, shuffle=False):
+    @commands.Cog.listener()
+    async def on_wavelink_track_start(self, player: wavelink.player,
+                                      track: wavelink.Track):
+        controller = self.get_controller(player.guild)
+        controller.song_start_time = time.time()
+        await controller.update_menu(response=controller.response)
+        controller.response = None
         try:
-            await self.join(ctx)
-        except NoJoinError:
-            return
-        state = await self.get_state(ctx)
+            segments = await self.get_skip_segments(track.uri)
+        except Exception:
+            segments = []
+        if segments:
+            while True:
+                if controller.guild.voice_client.source.id != track.id:
+                    break
+                position = player.position
+                for segment in segments:
+                    if position >= segment.start and position <= segment.end:
+                        await player.seek(segment.end * 1000)
+                await asyncio.sleep(0.5)
 
-        async def process_entry(song_url):
-            entry = VoiceEntry(ctx, song_url)
-            try:
-                await entry.get_info()
-            except youtube_dl.utils.DownloadError:
-                return
-            await state.queue.put(entry)
-            return entry
-
-        if self.is_playlist(url):
-            data = await self.bot.loop.run_in_executor(
-                None,
-                lambda: ytdl.extract_info(url, download=False, process=False))
-            songs = list(data["entries"])
-            if shuffle:
-                random.shuffle(songs)
-            await ctx.send("Added {} songs to the queue".format(len(songs)))
-            for song in songs:
-                await process_entry("https://youtube.com/watch?v={}".format(
-                    song["url"]))
-            return
-        entry = await process_entry(url)
-        if entry:
-            return await ctx.send("Queued: {} by {}".format(
-                entry.title, entry.uploader))
-        await ctx.send("Encountered an error while trying to enqueue your song"
-                       )
-
-    async def join(self, ctx):
-        user = ctx.author
-        if not user.voice or not user.voice.channel:
-            await ctx.send("You are not in a voice channel")
-            raise NoJoinError
-        channel = user.voice.channel
-        if ctx.voice_client:
-            if ctx.me.voice.channel == channel:
-                return
-            if not user.guild_permissions.move_members:
-                await ctx.send("I am already in a voice channel!")
-                raise NoJoinError
+    @commands.Cog.listener()
+    async def on_wavelink_track_end(self, player, track, reason):
+        controller = self.get_controller(player.guild)
+        controller.next.set()
+        await controller.added.wait()
+        # Check if the track is the last in the queue
+        if not controller.queue and not player.source:
+            if controller.repeat:
+                controller.queue.extend(controller.previous_songs)
+                controller.previous_songs.clear()
             else:
-                if channel:
-                    await ctx.send(
-                        "{.name} moved me to another voice channel!".format(
-                            user))
-                    return await ctx.voice_client.move_to(channel)
-        await channel.connect()
+                await controller.update_menu(response=controller.response)
+                controller.response = None
+                # await controller.stop()
+                return
 
-    def is_connected(self, ctx):
-        return ctx.voice_client and ctx.voice_client.is_connected()
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, player: Player, track, error):
+        controller = self.get_controller(player.guild)
+        controller.next.set()
 
-    def is_playlist(self, url):
-        return "http" in url and "playlist" in url
+    def get_controller(self, guild: discord.Guild, *, create=False):
+        try:
+            controller = self.controllers[guild.id]
+        except KeyError:
+            if create:
+                controller = MusicController(self.bot, self, guild)
+                self.controllers[guild.id] = controller
+            else:
+                return None
+        return controller
 
-    async def stop_playing(self, guild):
-        vc = guild.voice_client
-        if guild.voice_client:
-            await vc.disconnect()
-        state = self.states.get(guild.id)
-        if not state:
-            return
-        state.audio_player.cancel()
-        del self.states[guild.id]
+    async def connect(self, user: discord.Member,
+                      channel: discord.VoiceChannel):
+        if not user.guild.voice_client:
+            player = Player(dj=user)
+            player = await channel.connect(cls=player, self_deaf=True)
+            doc = await self.bot.database.get(user.guild, self)
+            controller = self.get_controller(user.guild, create=True)
+            vol = doc.get('volume', 0.15)
+            controller.volume = vol
+            await player.set_volume(vol)
+            return player
 
-    def queue_embed(self, state):
-        def song_line(entry, counter=0):
-            requester = entry.requester.nick or entry.requester.name
-            prefix = "{}. ".format(counter) if counter else ""
-            line = prefix + "{} by {} ({})".format(entry.title, entry.uploader,
-                                                   requester)
-            return line
-
-        queue = list(itertools.islice(state.queue._queue, 0, 5))
-        upcoming = []
-        counter = 1
-        for entry in queue:
-            upcoming.append(song_line(entry, counter))
-            counter += 1
-        embed = discord.Embed(title="🎵 Queue 🎵", color=self.bot.color)
-        if state.is_playing():
-            embed.add_field(name="Current",
-                            value=song_line(state.current),
-                            inline=False)
-        if not queue:
-            embed.add_field(name="Upcoming",
-                            value="No songs are in the queue",
-                            inline=False)
+    async def get_tracks_by_query(self,
+                                  query,
+                                  *,
+                                  search_type="song",
+                                  platform="youtube"):
+        if platform == "youtube":
+            if search_type == "song":
+                cls = wavelink.YouTubeTrack
+            elif search_type == "playlist":
+                return []
+        elif platform == "spotify":
+            return []
+            cls = spotify.SpotifyTrack
+        results = await cls.search(query)
+        if not results:
+            return []
+        options = []
+        tracks = []
+        if hasattr(results, "tracks"):
+            tracks = results.tracks
         else:
-            embed.add_field(name="Upcoming",
-                            value="\n".join(upcoming),
-                            inline=False)
-        embed.set_footer(
-            text="{} songs are in the queue.".format(len(state.queue._queue)))
-        return embed
+            tracks = results
+        for track in tracks:
+            name = get_track_choice_name(track)
+            options.append(app_commands.Choice(name=name, value=track.uri))
+        return options[:25]
 
-    def song_embed(self, state):
-        def format_number(number):
-            magnitude = 0
-            while abs(number) >= 1000:
-                magnitude += 1
-                number /= 1000.0
-            suffix = ['', 'K', 'M', 'G', 'T', 'P'][magnitude]
-            if number != int(number):
-                number = "{:.2f}".format(number)
+    async def get_user_recent_searches(self,
+                                       user: discord.User,
+                                       search_type="song",
+                                       platform="youtube"):
+        cursor = self.searches_collection.find({
+            "user_id": user.id,
+            "search_type": search_type,
+            "platform": platform
+        }).sort("created_at").limit(25)
+        return [
+            app_commands.Choice(name=track["name"], value=track["uri"])
+            async for track in cursor
+        ]
+
+    async def song_search_autocomplete(self, interaction: discord.Interaction,
+                                       current):
+        search = interaction.command.extras["search"]
+        if not current:
+            results = await self.get_user_recent_searches(
+                interaction.user, **search)
+            return list(reversed(results))
+        return await self.get_tracks_by_query(current, **search)
+
+    @aiocache.cached(ttl=600)
+    async def get_lyrics(self, track: wavelink.Track):
+        title = urllib.parse.quote(track.title)
+        url = LYRICS_URL.format(title)
+        async with self.bot.session.get(url) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            if not data:
+                return None
+            return data
+
+    async def add_song_via_command(self,
+                                   interaction: discord.Interaction,
+                                   track: wavelink.Track,
+                                   url=None):
+        if not track:
+            return await interaction.followup.send(
+                'Could not find any songs with that query.')
+        is_list = isinstance(track, list)
+        if interaction.command and not is_list:
+            recent = await self.searches_collection.find({
+                "user_id":
+                interaction.user.id,
+                **interaction.command.extras["search"]
+            }).sort("created_at").to_list(length=25)
+            to_update = None
+            for recent in recent:
+                if recent["uri"] == url:
+                    to_update = recent["_id"]
+                    break
+            url = url
+            if hasattr(track, "uri"):
+                url = track.uri
+            if not to_update:
+                await self.searches_collection.insert_one({
+                    "user_id":
+                    interaction.user.id,
+                    "name":
+                    get_track_choice_name(track),
+                    "uri":
+                    url,
+                    "created_at":
+                    datetime.datetime.now(datetime.timezone.utc),
+                    **interaction.command.extras["search"]
+                })
             else:
-                number = str(number)
-            return number + suffix
+                await self.searches_collection.update_one({"_id": to_update}, {
+                    "$set": {
+                        "created_at": datetime.datetime.now(
+                            datetime.timezone.utc)
+                    }
+                },
+                                                          upsert=False)
+        channel = interaction.user.voice.channel
+        await self.connect(interaction.user, channel)
+        controller = self.get_controller(interaction.guild)
+        unposted = controller.menu_message is None
+        if interaction.channel != channel and unposted:
+            extra = f"\nControl panel sent to {channel.mention} text channel."
+        else:
+            extra = ""
+        iterable = None
+        if is_list:
+            iterable = track
+        if hasattr(track, "tracks"):
+            iterable = track.tracks
+        if iterable:
+            for t in iterable:
+                t.info["requester"] = interaction.user
+            try:
+                controller.queue.extend(iterable)
+                await interaction.followup.send(
+                    "Added the playlist to queue." + extra)
+            except asyncio.QueueFull:
+                await interaction.followup.send(
+                    "Some of the tracks haven't been aded as the queue is full"
+                    + extra)
+                return
+            finally:
+                if not unposted:
+                    await controller.update_menu()
+        else:
+            track.info["requester"] = interaction.user
+            await controller.queue.put(track)
+            await interaction.followup.send("Added the song to queue." + extra)
+        if not unposted:
+            await controller.update_menu()
 
-        def diagram(percentage):
-            output = ""
-            bar_count = round(percentage / 5)
-            for emoji in range(bar_count):
-                output += "▓"
-            tab_count = 20 - bar_count
-            for tab in range(tab_count):
-                output += "░"
+    @app_commands.command(
+        extras={"search": {
+            "search_type": "song",
+            "platform": "youtube"
+        }})
+    @app_commands.guild_only()
+    @app_commands.describe(
+        query="The URL of the song to play, or a search term.")
+    @app_commands.autocomplete(query=song_search_autocomplete)
+    async def play(self, interaction: discord.Interaction, query: str):
+        """Search for and add a song to the Queue."""
+        if not interaction.user.voice:
+            return await interaction.response.send_message(
+                "You are not in a voice channel.")
+        await interaction.response.defer()
+        results = await wavelink.YouTubeTrack.search(query)
+        if not isinstance(results, wavelink.YouTubePlaylist):
+            results = results[0]
+        await self.add_song_via_command(interaction, results, url=query)
 
-            return output + ""
+    @app_commands.command(
+        extras={"search": {
+            "search_type": "song",
+            "platform": "spotify"
+        }})
+    @app_commands.guild_only()
+    @app_commands.describe(
+        url="The URL of the song to play, or the Spotify ID.")
+    @app_commands.autocomplete(url=song_search_autocomplete)
+    async def play_spotify(self, interaction: discord.Interaction, url: str):
+        """Search for and add a song to the Queue."""
+        if not interaction.user.voice:
+            return await interaction.response.send_message(
+                "You are not in a voice channel.")
+        await interaction.response.defer()
+        if url.startswith("https://open.spotify.com/"):
+            decoded = spotify.decode_url(url)
+            if not decoded:
+                return await interaction.response.send_message(
+                    "Invalid Spotify URL.")
+            track_id = decoded["id"]
+            search_type = decoded["type"]
+            if search_type == spotify.SpotifySearchType.unusable:
+                return await interaction.response.send_message(
+                    "Invalid Spotify URL.")
+            results = await spotify.SpotifyTrack.search(track_id,
+                                                        type=search_type)
+        else:
+            results = await wavelink.YouTubeTrack.search(url)
+        if not results:
+            return await interaction.followup.send(
+                'Could not find any songs with that query.')
+        await self.add_song_via_command(interaction, results, url=url)
 
-        entry = state.current
-        embed = discord.Embed(title=entry.title,
-                              url=entry.video_url,
-                              color=0xFE0000)
-        uploader_url = entry.uploader_url or discord.Embed.Empty
-        embed.set_author(name=entry.uploader, url=uploader_url)
-        embed.set_thumbnail(url=entry.thumbnail)
-        if entry.description:
-            if len(entry.description) > 500:
-                entry.description = entry.description[:500] + "..."
-            embed.add_field(name="Video Description",
-                            value=entry.description,
-                            inline=False)
-        if entry.likes is not None and entry.dislikes is not None:
-            likes = format_number(entry.likes)
-            dislikes = format_number(entry.dislikes)
-            embed.add_field(name="Likes | Dislikes",
-                            value="\\👍 {} | {} \\👎".format(likes, dislikes),
-                            inline=True)
-        if entry.view_count is not None:
-            view_count = format_number(entry.view_count)
-            embed.add_field(name="View Count",
-                            value="\\📺 {}".format(view_count),
-                            inline=True)
-        if entry.duration:
-            duration_percentage = (state.time_elapsed / entry.duration) * 100
-            graph = diagram(duration_percentage)
-            embed.add_field(name="Duration",
-                            value="|" + graph + "|" +
-                            "  {0[0]}:{0[1]:02d}/{1[0]}:{1[1]:02d}".format(
-                                divmod(math.floor(state.time_elapsed), 60),
-                                divmod(entry.duration, 60)),
-                            inline=False)
-        return embed
+    @app_commands.command(
+        extras={"search": {
+            "search_type": "playlist",
+            "platform": "youtube"
+        }})
+    @app_commands.guild_only()
+    @app_commands.describe(url="The URL of the playlist to play.")
+    @app_commands.autocomplete(url=song_search_autocomplete)
+    async def play_playlist(self, interaction: discord.Interaction, url: str):
+        """Queue a playlist. """
+        if not interaction.user.voice:
+            return await interaction.response.send_message(
+                "You are not in a voice channel.")
+        await interaction.response.defer()
+        result = await wavelink.YouTubePlaylist.search(url)
+        if not result:
+            return await interaction.response.send_message(
+                'Could not find any playlists with that URL.', ephemeral=True)
+        await self.add_song_via_command(interaction, result, url)
+
+    async def pause_playback(self, guild: discord.Guild):
+        player = guild.voice_client
+        if not player.is_playing():
+            return False
+        player.pause()
+        return True
+
+    @app_commands.command()
+    @app_commands.guild_only()
+    async def pause(self, interaction: discord.Interaction):
+        """Pause the playback."""
+        if not interaction.guild.voice_client:
+            return await interaction.response.send_message(
+                'Currently not playing.')
+        player = interaction.guild.voice_client
+        if player.is_paused():
+            await player.resume()
+            return await interaction.response.send_message(
+                'Resumed the playback.')
+        result = await self.pause_playback(interaction.guild)
+        if result:
+            await interaction.response.send_message('Paused the playback.')
+        else:
+            await interaction.response.send_message('Currently not playing.')
+
+    @app_commands.command()
+    @app_commands.guild_only()
+    async def resume(self, interaction: discord.Interaction):
+        """Resume the player from a paused state."""
+        if not interaction.guild.voice_client:
+            return await interaction.response.send_message(
+                'Currently not playing.')
+        player = interaction.guild.voice_client
+        if player.is_paused():
+            await player.resume()
+            return await interaction.response.send_message(
+                'Resumed the playback.')
+        else:
+            return await interaction.response.send_message(
+                'Currently not paused.')
+
+    @app_commands.command()
+    @app_commands.guild_only()
+    async def skip(self, interaction: discord.Interaction):
+        """Skip the currently playing song."""
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+
+        await interaction.response.send_message('Skipping the song!')
+        await player.stop()
+
+    @app_commands.command()
+    @app_commands.guild_only()
+    @app_commands.describe(
+        volume="The volume, between 0 and 100. Moderators can increase "
+        "the volume up to 200.")
+    async def volume(self, interaction,
+                     volume: app_commands.transformers.Range[int, 0, 200]):
+        """Set the player volume."""
+
+        controller = self.get_controller(interaction.guild)
+        vol = volume / 100
+        controller.volume = vol
+        await self.bot.database.set(interaction.guild, {"volume": vol}, self)
+        await interaction.response.send_message(
+            f'Setting the player volume to `{volume}`')
+        player = interaction.guild.voice_client
+        if player:
+            await player.set_volume(vol)
+
+    @app_commands.command()
+    @app_commands.guild_only()
+    async def song(self, interaction: discord.Interaction):
+        """Retrieve the currently playing song."""
+        player = interaction.guild.voice_client
+        if not player or not player.source:
+            return await interaction.response.send_message(
+                'I am not currently playing anything!', ephemeral=True)
+
+        await interaction.response.send_message(
+            f'Now playing: `{player.source}`')
+
+    @app_commands.command()
+    @app_commands.guild_only()
+    async def queue(self, interaction: discord.Interaction):
+        """Retrieve information on the next 5 songs from the queue."""
+        controller = self.get_controller(interaction.guild)
+        player = interaction.guild.voice_client
+        if not player or not player.source or not controller.queue._queue:
+            return await interaction.response.send_message(
+                'There are no songs currently in the queue.')
+        upcoming = controller.queue[:6]
+
+        fmt = '\n'.join(f'**`{str(song)}`**' for song in upcoming)
+        embed = discord.Embed(title=f'Upcoming - Next {len(upcoming)}',
+                              description=fmt)
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command()
+    @app_commands.guild_only()
+    async def stop(self, interaction: discord.Interaction):
+        """Stop and disconnect the player and controller."""
+        controller = self.get_controller(interaction.guild)
+        await controller.stop()
+        await interaction.response.send(
+            'Disconnected player and killed controller.')
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member,
+                                    before: discord.VoiceState,
+                                    after: discord.VoiceState):
+        if member == self.bot.user:
+            if before.channel and not after.channel:
+                controller = self.get_controller(member.guild)
+                if controller:
+                    await controller.stop()
+        if member.bot:
+            return
+        controller = self.get_controller(member.guild)
+        if after.channel:
+            return
+        player = member.guild.voice_client
+        if not player:
+            return
+        if before.channel and before.channel == player.channel:
+            members = [m for m in player.channel.members if not m.bot]
+            if len(members) == 0:
+                await controller.stop()
+                return await before.channel.send(
+                    "All users have left. Stopping playback.")
+
+    @tasks.loop(minutes=1)
+    async def delete_old_downloads(self):
+        directory = BASE_PATH / "cache"
+        for path in directory.glob("*.ogg"):
+            if path.stat().st_mtime < time.time() - 60 * 60 * 24:
+                path.unlink()
 
 
-def setup(bot):
-    cog = Music(bot)
-    bot.add_cog(cog)
+async def setup(bot):
+    await bot.add_cog(Music(bot))
