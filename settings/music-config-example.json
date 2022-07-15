@@ -1,0 +1,14 @@
+{
+    "nodes": [
+        {
+            "host": "127.0.0.1",
+            "port": "2333",
+            "password": "youshallnotpass"
+        }
+    ],
+    "spotify": {
+        "client_id": "",
+        "client_secret": ""
+    },
+    "ffmpeg_path": "ffmpeg"
+}
