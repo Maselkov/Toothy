@@ -120,7 +120,7 @@ class Toothy(commands.AutoShardedBot):
                       mode="r") as f:
                 extensions = json.load(f)
         except Exception:
-            extensions = {"owner": True}
+            extensions = {"cogs.owner": True}
         for name, state in extensions.items():
             if state:
                 try:
