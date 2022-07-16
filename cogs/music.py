@@ -725,7 +725,6 @@ class Music(commands.Cog):
         self.sb = sponsorblock.Client()
         self.delete_old_downloads.start()
         self.download_tasks = {}
-        self.ffmpeg_location = "ffmpeg"
 
     async def cog_load(self):
         spotify_client = None
