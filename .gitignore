@@ -108,6 +108,6 @@ settings/config.json
 settings/music-config.json
 settings/extensions.json
 settings/music-config.json
-
+settings/botsites.json
 music/*
 logs/*

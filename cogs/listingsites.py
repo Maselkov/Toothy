@@ -7,6 +7,7 @@ log = logging.getLogger(__name__)
 
 
 class BotSite:
+
     def __init__(self, bot, data):
         self.bot = bot
         self.token = data["token"]
@@ -28,8 +29,9 @@ class BotSite:
             "Authorization": self.token,
             "Content-Type": "application/json"
         }
-        async with self.bot.session.post(
-                self.url, data=json.dumps(payload), headers=headers) as r:
+        async with self.bot.session.post(self.url,
+                                         data=json.dumps(payload),
+                                         headers=headers) as r:
             log.info("Url: {} Payload: {} Response: {}".format(
                 self.url, payload, r.status))
 
@@ -44,12 +46,6 @@ class ListingSites(commands.Cog):
 
     async def cog_check(self, ctx):
         return await self.bot.is_owner(ctx.author)
-
-    @commands.command()
-    async def reloadsites(self, ctx):
-        """Reload bot listing site information"""
-        self.load_sites()
-        await ctx.send("Listing sites reloaded")
 
     def load_sites(self):
         with open("settings/botsites.json", encoding="utf-8", mode="r") as f:
@@ -72,6 +68,5 @@ class ListingSites(commands.Cog):
         await self.post_stats()
 
 
-def setup(bot):
-    cog = ListingSites(bot)
-    bot.add_cog(cog)
+async def setup(bot):
+    await bot.add_cog(ListingSites(bot))
