@@ -75,8 +75,8 @@ class Toothy(commands.AutoShardedBot):
                     msg = await cog.cog_error_handler(interaction,
                                                       error.original)
                 if not msg:
-                    self.log.exception("Exception in command, ",
-                                       exc_info=error.original)
+                    log.exception("Exception in command, ",
+                                  exc_info=error.original)
                     msg = ("Something went wrong. If this problem persists, "
                            "please report it or ask about it in the "
                            "support server.")
