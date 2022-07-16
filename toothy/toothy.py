@@ -6,6 +6,7 @@ import sys
 import aiohttp
 import discord
 from discord.ext import commands
+from discord import app_commands
 
 from .database import MongoController
 
@@ -59,6 +60,59 @@ class Toothy(commands.AutoShardedBot):
         self.test_guild = TEST_GUILD
         self.uptime = datetime.datetime.utcnow()
 
+        @self.tree.error
+        async def on_app_command_error(
+                interaction: discord.Interaction,
+                error: discord.app_commands.AppCommandError):
+            responded = interaction.response.is_done()
+            msg = ""
+            if isinstance(error, app_commands.CommandInvokeError):
+                command = interaction.command
+                cog = None
+                if hasattr(command, "binding"):
+                    cog = command.binding
+                if hasattr(cog, "cog_error_handler"):
+                    msg = await cog.cog_error_handler(interaction,
+                                                      error.original)
+                if not msg:
+                    self.log.exception("Exception in command, ",
+                                       exc_info=error.original)
+                    msg = ("Something went wrong. If this problem persists, "
+                           "please report it or ask about it in the "
+                           "support server.")
+            elif isinstance(error, app_commands.NoPrivateMessage):
+                msg = "This command cannot be used in DMs"
+            elif isinstance(error, app_commands.CommandOnCooldown):
+                msg = ("You cannot use this command again for the next "
+                       "{:.2f} seconds"
+                       "".format(error.retry_after))
+            elif isinstance(error, app_commands.MissingPermissions):
+                missing = [
+                    p.replace("guild", "server").replace("_", " ").title()
+                    for p in error.missing_permissions
+                ]
+                msg = ("You're missing the following permissions to use this "
+                       "command: `{}`".format(", ".join(missing)))
+            elif isinstance(error, app_commands.BotMissingPermissions):
+                missing = [
+                    p.replace("guild", "server").replace("_", " ").title()
+                    for p in error.missing_permissions
+                ]
+                msg = (
+                    "The bot is missing the following permissions to be able "
+                    "to run this command:\n`{}`\nPlease add them then try "
+                    "again".format(", ".join(missing)))
+            elif isinstance(error, app_commands.CommandNotFound):
+                msg = ("The command you used could not be found. The "
+                       "bot owner probably forgot to sync commands. "
+                       "Try again later.")
+            elif isinstance(error, app_commands.CheckFailure):
+                pass
+            if not responded:
+                await interaction.response.send_message(msg, ephemeral=True)
+            else:
+                await interaction.followup.send(msg, ephemeral=True)
+
     async def setup_hook(self):
         self.session = aiohttp.ClientSession(loop=self.loop)
         try:
@@ -92,54 +146,6 @@ class Toothy(commands.AutoShardedBot):
         if user.id != self.owner_id:
             return
         await self.process_commands(message)
-
-    async def on_command_error(self, ctx, exc):
-        if isinstance(exc, commands.NoPrivateMessage):
-            await ctx.send("This command cannot be used in DMs")
-            ctx.command.reset_cooldown(ctx)
-        elif isinstance(exc, commands.CommandOnCooldown):
-            if await ctx.bot.database.get_flag(ctx.author, "vip"):
-                await ctx.reinvoke()
-            else:
-                await ctx.send(
-                    "You cannot use this command again for the next "
-                    "{:.2f} seconds"
-                    "".format(exc.retry_after))
-        elif isinstance(
-                exc, (commands.MissingRequiredArgument, commands.BadArgument)):
-            await ctx.send_help(ctx.command)
-            ctx.command.reset_cooldown(ctx)
-        elif isinstance(exc, commands.DisabledCommand):
-            await ctx.send("This command is disabled")
-        elif isinstance(exc, commands.CommandInvokeError):
-            message = ("Something went wrong. If the issue persists, please "
-                       "contact the author. ")
-            await ctx.send(message)
-            log.exception(
-                "Exception in command " + ctx.command.qualified_name,
-                exc_info=exc.original,
-            )
-        elif isinstance(exc, commands.MissingPermissions):
-            missing = [
-                p.replace("guild", "server").replace("_", " ").title()
-                for p in exc.missing_perms
-            ]
-            await ctx.send(
-                "You're missing the following permissions to use this "
-                "command: `{}`".format(", ".join(missing)))
-        elif isinstance(exc, commands.BotMissingPermissions):
-            missing = [
-                p.replace("guild", "server").replace("_", " ").title()
-                for p in exc.missing_perms
-            ]
-            await ctx.send(
-                "The bot is missing the following permissions to be able to "
-                "run this command:\n`{}`\nPlease add them then try again".
-                format(", ".join(missing)))
-        elif isinstance(exc, commands.CommandNotFound):
-            pass
-        elif isinstance(exc, commands.CheckFailure):
-            pass
 
     async def close(self):
         await super().close()
