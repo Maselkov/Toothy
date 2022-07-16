@@ -10,5 +10,5 @@
         "client_id": "",
         "client_secret": ""
     },
-    "ffmpeg_path": "ffmpeg"
+    "ffmpeg_location": "ffmpeg"
 }

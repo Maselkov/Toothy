@@ -78,8 +78,8 @@ async def download_track(track: wavelink.Track):
             True,
             "outtmpl":
             str(save_path),
-            "ffmpeg_path":
-            CONFIG["ffmpeg_path"],
+            "ffmpeg_location":
+            CONFIG["ffmpeg_location"],
         }
         with YoutubeDL(ydl_opts) as ydl:
             return ydl.download([track.uri])
