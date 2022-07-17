@@ -30,16 +30,15 @@ cp ./settings/config-example.json ./settings/config.json
 1. Login to [Discord Developer Portal](https://discord.com/developers/applications) and click "New Application".
 
 2. After creating a new application, go to the Bot tab and click the *Add Bot* button.  
-  * Save the ***Bot Token*** because you will need it in Step 4.  
-  * Save the ***Application ID*** because you will need it in Step 5.
+    * Save the ***Bot Token*** because you will need it in Step 4.  
+    * Save the ***Application ID*** because you will need it in Step 5.
 
 3. Scroll down to the *Privileged Gateway Intents* section and enable all privileged intents, then save changes.
 
 4. Edit your `config.json` file:  
-  * Copy the ***Bot Token*** from Step 2 into the **TOKEN** field.  
-  * Copy your ***Discord User ID*** into the **OWNER_ID** field.  
-  * Copy your ***Discord Server ID*** into the **TEST_GUILD** field.  
-
+    * Copy the ***Bot Token*** from Step 2 into the **TOKEN** field.  
+    * Copy your ***Discord User ID*** into the **OWNER_ID** field.  
+    * Copy your ***Discord Server ID*** into the **TEST_GUILD** field.  
   *Help: [How to get Discord IDs](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID-)*
 
 5. Invite your newly created bot to your Discord server by copying the following URL into a browser:  
