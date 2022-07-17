@@ -1,21 +1,25 @@
-[{
-    "token": null,
-    "url": "https://discord.bots.gg/api/v1/bots/{}/stats",
-    "template": {
-        "guild_count": "guildCount",
-        "shard_count": "shardCount"
+[
+    {
+        "token": null,
+        "url": "https://discord.bots.gg/api/v1/bots/{}/stats",
+        "template": {
+            "guild_count": "guildCount",
+            "shard_count": "shardCount"
+        }
+    },
+    {
+        "token": null,
+        "url": "https://top.gg/api/bots/{}/stats",
+        "template": {
+            "guild_count": "server_count",
+            "shard_count": "shard_count"
+        }
+    },
+    {
+        "token": null,
+        "url": "https://bots.ondiscord.xyz/bot-api/bots/{}/guilds",
+        "template": {
+            "guild_count": "guildCount"
+        }
     }
-}, {
-    "token": null,
-    "url": "https://discordbots.org/api/bots/{}/stats",
-    "template": {
-        "guild_count": "server_count",
-        "shard_count": "shard_count"
-    }
-}, {
-    "token": null,
-    "url": "https://bots.ondiscord.xyz/bot-api/bots/{}/guilds",
-    "template": {
-        "guild_count": "guildCount"
-    }
-}]
+]
